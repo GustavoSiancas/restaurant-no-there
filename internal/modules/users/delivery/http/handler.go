@@ -20,13 +20,6 @@ type managementRegisterRequest struct {
 	Role      domain.Role `json:"role"`
 }
 
-type workerRegisterRequest struct {
-	DNI       string `json:"dni"`
-	Email     string `json:"email"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-}
-
 func (h *Handler) BootstrapAdmin(c *gin.Context) {
 	var r managementRegisterRequest
 	if c.ShouldBindJSON(&r) != nil {
@@ -59,19 +52,6 @@ func (h *Handler) RegisterManagement(c *gin.Context) {
 	c.JSON(http.StatusCreated, u)
 }
 
-func (h *Handler) RegisterWorker(c *gin.Context) {
-	var r workerRegisterRequest
-	if c.ShouldBindJSON(&r) != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
-		return
-	}
-	u, err := h.service.Register(c, application.RegisterInput{DNI: r.DNI, Email: r.Email, FirstName: r.FirstName, LastName: r.LastName, Role: domain.RoleWorker})
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusCreated, u)
-}
 func (h *Handler) List(c *gin.Context) {
 	users, err := h.service.List(c)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	core "backend/internal/core/domain"
+	userdomain "backend/internal/modules/users/domain"
 	"backend/internal/modules/workforce/domain"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -15,6 +16,26 @@ import (
 type Repository struct{ db *pgxpool.Pool }
 
 func New(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
+
+func (r *Repository) CreateWorker(ctx context.Context, u *userdomain.User, i *domain.WorkerInformation) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	err = tx.QueryRow(ctx, `INSERT INTO users (dni,email,first_name,last_name,role) VALUES ($1,$2,$3,$4,'WORKER')
+		RETURNING id,active,created_at,updated_at`, u.DNI, u.Email, u.FirstName, u.LastName).Scan(&u.ID, &u.Active, &u.CreatedAt, &u.UpdatedAt)
+	if err != nil {
+		return translate(err)
+	}
+	i.UserID = u.ID
+	err = tx.QueryRow(ctx, `INSERT INTO worker_information (user_id,employee_code,job_title,department,phone,address,hire_date,emergency_contact_name,emergency_contact_phone,notes)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING created_at,updated_at`, i.UserID, i.EmployeeCode, i.JobTitle, i.Department, i.Phone, i.Address, i.HireDate, i.EmergencyContactName, i.EmergencyContactPhone, i.Notes).Scan(&i.CreatedAt, &i.UpdatedAt)
+	if err != nil {
+		return translate(err)
+	}
+	return tx.Commit(ctx)
+}
 
 func translate(err error) error {
 	var pgErr *pgconn.PgError
@@ -27,11 +48,6 @@ func translate(err error) error {
 	return err
 }
 
-func (r *Repository) CreateWorkerInformation(ctx context.Context, i *domain.WorkerInformation) error {
-	err := r.db.QueryRow(ctx, `INSERT INTO worker_information (user_id,employee_code,job_title,department,phone,address,hire_date,emergency_contact_name,emergency_contact_phone,notes)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING created_at,updated_at`, i.UserID, i.EmployeeCode, i.JobTitle, i.Department, i.Phone, i.Address, i.HireDate, i.EmergencyContactName, i.EmergencyContactPhone, i.Notes).Scan(&i.CreatedAt, &i.UpdatedAt)
-	return translate(err)
-}
 func (r *Repository) FindWorkerInformation(ctx context.Context, id string) (*domain.WorkerInformation, error) {
 	var i domain.WorkerInformation
 	err := r.db.QueryRow(ctx, `SELECT user_id,employee_code,job_title,department,phone,address,hire_date,emergency_contact_name,emergency_contact_phone,notes,created_at,updated_at FROM worker_information WHERE user_id=$1`, id).Scan(&i.UserID, &i.EmployeeCode, &i.JobTitle, &i.Department, &i.Phone, &i.Address, &i.HireDate, &i.EmergencyContactName, &i.EmergencyContactPhone, &i.Notes, &i.CreatedAt, &i.UpdatedAt)

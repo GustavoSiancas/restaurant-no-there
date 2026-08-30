@@ -15,7 +15,11 @@ type Handler struct{ service *application.Service }
 
 func New(service *application.Service) *Handler { return &Handler{service: service} }
 
-type workerInformationRequest struct {
+type registerWorkerRequest struct {
+	DNI                   string `json:"dni"`
+	Email                 string `json:"email"`
+	FirstName             string `json:"first_name"`
+	LastName              string `json:"last_name"`
 	EmployeeCode          string `json:"employee_code"`
 	JobTitle              string `json:"job_title"`
 	Department            string `json:"department"`
@@ -27,8 +31,8 @@ type workerInformationRequest struct {
 	Notes                 string `json:"notes"`
 }
 
-func (h *Handler) CreateWorkerInformation(c *gin.Context) {
-	var r workerInformationRequest
+func (h *Handler) RegisterWorker(c *gin.Context) {
+	var r registerWorkerRequest
 	if c.ShouldBindJSON(&r) != nil {
 		c.JSON(400, gin.H{"error": "invalid JSON"})
 		return
@@ -42,7 +46,7 @@ func (h *Handler) CreateWorkerInformation(c *gin.Context) {
 		}
 		hireDate = &parsed
 	}
-	info, err := h.service.CreateWorkerInformation(c, application.WorkerInformationInput{UserID: c.Param("id"), EmployeeCode: r.EmployeeCode, JobTitle: r.JobTitle, Department: r.Department, Phone: r.Phone, Address: r.Address, HireDate: hireDate, EmergencyContactName: r.EmergencyContactName, EmergencyContactPhone: r.EmergencyContactPhone, Notes: r.Notes})
+	user, info, err := h.service.RegisterWorker(c, application.RegisterWorkerInput{DNI: r.DNI, Email: r.Email, FirstName: r.FirstName, LastName: r.LastName, EmployeeCode: r.EmployeeCode, JobTitle: r.JobTitle, Department: r.Department, Phone: r.Phone, Address: r.Address, HireDate: hireDate, EmergencyContactName: r.EmergencyContactName, EmergencyContactPhone: r.EmergencyContactPhone, Notes: r.Notes})
 	if err != nil {
 		status := 400
 		if errors.Is(err, core.ErrConflict) {
@@ -51,7 +55,7 @@ func (h *Handler) CreateWorkerInformation(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, info)
+	c.JSON(http.StatusCreated, gin.H{"user": user, "worker_information": info})
 }
 
 type shiftRequest struct {

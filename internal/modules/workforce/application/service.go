@@ -22,10 +22,11 @@ func NewService(repo Repository, users users.UserRepository) *Service {
 	return &Service{repo: repo, users: users}
 }
 
-type WorkerInformationInput struct {
-	UserID, EmployeeCode, JobTitle, Department, Phone, Address string
-	HireDate                                                   *time.Time
-	EmergencyContactName, EmergencyContactPhone, Notes         string
+type RegisterWorkerInput struct {
+	DNI, Email, FirstName, LastName, EmployeeCode      string
+	JobTitle, Department, Phone, Address               string
+	HireDate                                           *time.Time
+	EmergencyContactName, EmergencyContactPhone, Notes string
 }
 
 type ShiftInput struct {
@@ -41,22 +42,17 @@ func nullable(value string) *string {
 	return &value
 }
 
-func (s *Service) CreateWorkerInformation(ctx context.Context, in WorkerInformationInput) (*domain.WorkerInformation, error) {
-	user, err := s.users.FindByID(ctx, in.UserID)
-	if err != nil {
-		return nil, fmt.Errorf("worker user not found")
+func (s *Service) RegisterWorker(ctx context.Context, in RegisterWorkerInput) (*userdomain.User, *domain.WorkerInformation, error) {
+	dni := nullable(in.DNI)
+	if dni == nil || strings.TrimSpace(in.FirstName) == "" || strings.TrimSpace(in.LastName) == "" || strings.TrimSpace(in.EmployeeCode) == "" {
+		return nil, nil, fmt.Errorf("dni, first_name, last_name and employee_code are required")
 	}
-	if user.Role != userdomain.RoleWorker {
-		return nil, fmt.Errorf("user must have WORKER role")
+	user := &userdomain.User{DNI: dni, Email: nullable(in.Email), FirstName: strings.TrimSpace(in.FirstName), LastName: strings.TrimSpace(in.LastName), Role: userdomain.RoleWorker}
+	info := &domain.WorkerInformation{EmployeeCode: strings.TrimSpace(in.EmployeeCode), JobTitle: nullable(in.JobTitle), Department: nullable(in.Department), Phone: nullable(in.Phone), Address: nullable(in.Address), HireDate: in.HireDate, EmergencyContactName: nullable(in.EmergencyContactName), EmergencyContactPhone: nullable(in.EmergencyContactPhone), Notes: nullable(in.Notes)}
+	if err := s.repo.CreateWorker(ctx, user, info); err != nil {
+		return nil, nil, err
 	}
-	if strings.TrimSpace(in.EmployeeCode) == "" {
-		return nil, fmt.Errorf("employee_code is required")
-	}
-	info := &domain.WorkerInformation{UserID: in.UserID, EmployeeCode: strings.TrimSpace(in.EmployeeCode), JobTitle: nullable(in.JobTitle), Department: nullable(in.Department), Phone: nullable(in.Phone), Address: nullable(in.Address), HireDate: in.HireDate, EmergencyContactName: nullable(in.EmergencyContactName), EmergencyContactPhone: nullable(in.EmergencyContactPhone), Notes: nullable(in.Notes)}
-	if err = s.repo.CreateWorkerInformation(ctx, info); err != nil {
-		return nil, err
-	}
-	return info, nil
+	return user, info, nil
 }
 
 func (s *Service) CreateShift(ctx context.Context, in ShiftInput) (*domain.Shift, error) {

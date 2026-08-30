@@ -29,9 +29,10 @@ type fakeRepository struct {
 	created  bool
 }
 
-func (f *fakeRepository) CreateWorkerInformation(context.Context, *domain.WorkerInformation) error {
+func (f *fakeRepository) CreateWorker(context.Context, *userdomain.User, *domain.WorkerInformation) error {
 	return nil
 }
+
 func (f *fakeRepository) FindWorkerInformation(context.Context, string) (*domain.WorkerInformation, error) {
 	return &domain.WorkerInformation{}, nil
 }

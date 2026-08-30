@@ -4,11 +4,12 @@ import (
 	"context"
 	"time"
 
+	userdomain "backend/internal/modules/users/domain"
 	"backend/internal/modules/workforce/domain"
 )
 
 type Repository interface {
-	CreateWorkerInformation(ctx context.Context, info *domain.WorkerInformation) error
+	CreateWorker(ctx context.Context, user *userdomain.User, info *domain.WorkerInformation) error
 	FindWorkerInformation(ctx context.Context, userID string) (*domain.WorkerInformation, error)
 	CreateShift(ctx context.Context, shift *domain.Shift) error
 	FindShift(ctx context.Context, id string) (*domain.Shift, error)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"backend/internal/config"
+	coredb "backend/internal/core/database"
 	authapp "backend/internal/modules/auth/application"
 	authhttp "backend/internal/modules/auth/delivery/http"
 	jwtinfra "backend/internal/modules/auth/infrastructure/jwt"
@@ -39,6 +40,9 @@ func main() {
 	if err = db.Ping(ctx); err != nil {
 		log.Fatal(err)
 	}
+	if err = coredb.RunMigrations(ctx, db, "migrations"); err != nil {
+		log.Fatal(err)
+	}
 	usersRepo := userpg.New(db)
 	tokensRepo := tokenpg.New(db)
 	jwtService := jwtinfra.New(cfg.JWTSecret, cfg.AccessTTL)
@@ -57,8 +61,7 @@ func main() {
 	protected := v1.Group("")
 	protected.Use(authhttp.RequireAuth(jwtService))
 	protected.POST("/users/register/management", authhttp.RequireRoles("ADMIN"), usersHandler.RegisterManagement)
-	protected.POST("/users/register/worker", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), usersHandler.RegisterWorker)
-	protected.POST("/workers/:id/information", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.CreateWorkerInformation)
+	protected.POST("/users/register/worker", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.RegisterWorker)
 	protected.POST("/shifts", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.CreateShift)
 	protected.GET("/shifts", workforceHandler.ListShifts)
 	protected.POST("/worker-shift-assignments", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.AssignWorker)

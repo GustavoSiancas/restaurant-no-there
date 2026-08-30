@@ -47,16 +47,16 @@ paths:
     post:
       tags: [Users]
       summary: Registrar WORKER
-      description: Requiere Bearer token de ADMIN, OWNER o RRHH. El rol WORKER se asigna automáticamente.
+      description: Requiere Bearer token de ADMIN, OWNER o RRHH. Crea atómicamente el usuario WORKER y su información laboral; los IDs se generan automáticamente.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
         content:
           application/json:
             schema: {$ref: '#/components/schemas/WorkerRegisterRequest'}
-            example: {dni: '10203040', email: worker@example.com, first_name: Juan, last_name: Pérez}
+            example: {dni: '10203040', email: worker@example.com, first_name: Juan, last_name: Pérez, employee_code: EMP-001, job_title: Operario, department: Producción, hire_date: '2026-09-01'}
       responses:
-        '201': {description: Creado, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
+        '201': {description: Usuario y ficha laboral creados, content: {application/json: {schema: {$ref: '#/components/schemas/WorkerRegistrationResponse'}}}}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -102,22 +102,6 @@ paths:
       responses:
         '200': {description: Usuario, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
         '404': {description: No encontrado}
-  /workers/{id}/information:
-    post:
-      tags: [Workforce]
-      summary: Registrar información laboral de un WORKER
-      description: Solo ADMIN, OWNER o RRHH. Se permite una ficha por trabajador.
-      security: [{bearerAuth: []}]
-      parameters: [{name: id, in: path, required: true, description: ID del usuario WORKER, schema: {type: string, format: uuid}}]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: '#/components/schemas/WorkerInformationRequest'}
-      responses:
-        '201': {description: Información creada}
-        '400': {$ref: '#/components/responses/BadRequest'}
-        '409': {description: El trabajador ya tiene información laboral o el código está ocupado}
   /shifts:
     post:
       tags: [Workforce]
@@ -193,16 +177,12 @@ components:
         role: {type: string, enum: [OWNER, RRHH]}
     WorkerRegisterRequest:
       type: object
-      required: [dni, first_name, last_name]
+      required: [dni, first_name, last_name, employee_code]
       properties:
         dni: {type: string}
         email: {type: string, format: email}
         first_name: {type: string}
         last_name: {type: string}
-    WorkerInformationRequest:
-      type: object
-      required: [employee_code]
-      properties:
         employee_code: {type: string, example: EMP-001}
         job_title: {type: string, example: Operario}
         department: {type: string, example: Producción}
@@ -212,6 +192,17 @@ components:
         emergency_contact_name: {type: string}
         emergency_contact_phone: {type: string}
         notes: {type: string}
+    WorkerRegistrationResponse:
+      type: object
+      properties:
+        user: {$ref: '#/components/schemas/User'}
+        worker_information:
+          type: object
+          properties:
+            user_id: {type: string, format: uuid}
+            employee_code: {type: string}
+            job_title: {type: string}
+            department: {type: string}
     ShiftRequest:
       type: object
       required: [name, type, description, start_time, end_time]
