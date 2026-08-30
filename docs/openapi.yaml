@@ -1,0 +1,122 @@
+openapi: 3.0.3
+info:
+  title: Modular Backend API
+  version: 1.0.0
+  description: API de usuarios y autenticación. Access token 5 minutos; refresh token 7 días.
+servers:
+  - url: http://localhost:8080/api/v1
+tags:
+  - name: Auth
+  - name: Users
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Registrar un usuario
+      description: ADMIN, OWNER y RRHH requieren username/password. WORKER requiere solo DNI como credencial. Email es opcional.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterRequest'}
+            examples:
+              owner:
+                value: {username: owner1, password: password123, email: owner@example.com, first_name: Ana, last_name: López, role: OWNER}
+              worker:
+                value: {dni: '10203040', first_name: Juan, last_name: Pérez, role: WORKER}
+      responses:
+        '201': {description: Creado, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /auth/login/password:
+    post:
+      tags: [Auth]
+      summary: Login de ADMIN, OWNER o RRHH
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PasswordLogin'}}}}
+      responses:
+        '200': {description: Tokens, content: {application/json: {schema: {$ref: '#/components/schemas/TokenPair'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/login/dni:
+    post:
+      tags: [Auth]
+      summary: Login temporal de WORKER por DNI
+      description: Este mecanismo será reemplazable por Face Scan.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DNILogin'}}}}
+      responses:
+        '200': {description: Tokens, content: {application/json: {schema: {$ref: '#/components/schemas/TokenPair'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotar refresh token
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RefreshRequest'}}}}
+      responses:
+        '200': {description: Tokens nuevos, content: {application/json: {schema: {$ref: '#/components/schemas/TokenPair'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /users:
+    get:
+      tags: [Users]
+      summary: Listar usuarios
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Lista, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/User'}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /users/{id}:
+    get:
+      tags: [Users]
+      summary: Obtener usuario
+      security: [{bearerAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Usuario, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
+        '404': {description: No encontrado}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  responses:
+    BadRequest: {description: Datos inválidos, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Unauthorized: {description: Credenciales inválidas, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [first_name, last_name, role]
+      properties:
+        username: {type: string}
+        dni: {type: string}
+        email: {type: string, format: email}
+        password: {type: string, minLength: 8}
+        first_name: {type: string}
+        last_name: {type: string}
+        role: {type: string, enum: [ADMIN, OWNER, RRHH, WORKER]}
+    PasswordLogin:
+      type: object
+      required: [username, password]
+      properties: {username: {type: string}, password: {type: string}}
+    DNILogin:
+      type: object
+      required: [dni]
+      properties: {dni: {type: string}}
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties: {refresh_token: {type: string}}
+    TokenPair:
+      type: object
+      properties:
+        access_token: {type: string}
+        refresh_token: {type: string}
+        token_type: {type: string, example: Bearer}
+        expires_in: {type: integer, example: 300}
+    User:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        username: {type: string}
+        dni: {type: string}
+        email: {type: string, format: email}
+        first_name: {type: string}
+        last_name: {type: string}
+        role: {type: string, enum: [ADMIN, OWNER, RRHH, WORKER]}
+        active: {type: boolean}
+    Error:
+      type: object
+      properties: {error: {type: string}}
