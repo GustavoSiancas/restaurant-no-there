@@ -12,4 +12,5 @@ type UserRepository interface {
 	FindByUsername(ctx context.Context, username string) (*domain.User, error)
 	FindByDNI(ctx context.Context, dni string) (*domain.User, error)
 	List(ctx context.Context) ([]domain.User, error)
+	RoleExists(ctx context.Context, role domain.Role) (bool, error)
 }

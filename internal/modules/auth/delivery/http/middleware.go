@@ -24,3 +24,27 @@ func RequireAuth(jwt *jwtinfra.Service) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+func RequireRoles(roles ...string) gin.HandlerFunc {
+	allowed := make(map[string]struct{}, len(roles))
+	for _, role := range roles {
+		allowed[role] = struct{}{}
+	}
+	return func(c *gin.Context) {
+		role, exists := c.Get("role")
+		if !exists {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "role is missing from token"})
+			return
+		}
+		roleName, valid := role.(string)
+		if !valid {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "invalid role in token"})
+			return
+		}
+		if _, ok := allowed[roleName]; !ok {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
+			return
+		}
+		c.Next()
+	}
+}

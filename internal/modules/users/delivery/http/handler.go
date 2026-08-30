@@ -11,9 +11,8 @@ type Handler struct{ service *application.Service }
 
 func New(s *application.Service) *Handler { return &Handler{service: s} }
 
-type registerRequest struct {
+type managementRegisterRequest struct {
 	Username  string      `json:"username"`
-	DNI       string      `json:"dni"`
 	Email     string      `json:"email"`
 	Password  string      `json:"password"`
 	FirstName string      `json:"first_name"`
@@ -21,13 +20,52 @@ type registerRequest struct {
 	Role      domain.Role `json:"role"`
 }
 
-func (h *Handler) Register(c *gin.Context) {
-	var r registerRequest
+type workerRegisterRequest struct {
+	DNI       string `json:"dni"`
+	Email     string `json:"email"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+}
+
+func (h *Handler) BootstrapAdmin(c *gin.Context) {
+	var r managementRegisterRequest
 	if c.ShouldBindJSON(&r) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
 		return
 	}
-	u, err := h.service.Register(c, application.RegisterInput{Username: r.Username, DNI: r.DNI, Email: r.Email, Password: r.Password, FirstName: r.FirstName, LastName: r.LastName, Role: r.Role})
+	u, err := h.service.BootstrapAdmin(c, application.RegisterInput{Username: r.Username, Email: r.Email, Password: r.Password, FirstName: r.FirstName, LastName: r.LastName})
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, u)
+}
+
+func (h *Handler) RegisterManagement(c *gin.Context) {
+	var r managementRegisterRequest
+	if c.ShouldBindJSON(&r) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+	if r.Role != domain.RoleOwner && r.Role != domain.RoleRRHH {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "role must be OWNER or RRHH"})
+		return
+	}
+	u, err := h.service.Register(c, application.RegisterInput{Username: r.Username, Email: r.Email, Password: r.Password, FirstName: r.FirstName, LastName: r.LastName, Role: r.Role})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, u)
+}
+
+func (h *Handler) RegisterWorker(c *gin.Context) {
+	var r workerRegisterRequest
+	if c.ShouldBindJSON(&r) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+	u, err := h.service.Register(c, application.RegisterInput{DNI: r.DNI, Email: r.Email, FirstName: r.FirstName, LastName: r.LastName, Role: domain.RoleWorker})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

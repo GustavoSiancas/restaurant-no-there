@@ -48,6 +48,18 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*domain.User,
 	}
 	return u, nil
 }
+
+func (s *Service) BootstrapAdmin(ctx context.Context, in RegisterInput) (*domain.User, error) {
+	exists, err := s.repo.RoleExists(ctx, domain.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, fmt.Errorf("the initial ADMIN has already been created")
+	}
+	in.Role = domain.RoleAdmin
+	return s.Register(ctx, in)
+}
 func (s *Service) List(ctx context.Context) ([]domain.User, error) { return s.repo.List(ctx) }
 func (s *Service) FindByID(ctx context.Context, id string) (*domain.User, error) {
 	return s.repo.FindByID(ctx, id)

@@ -57,3 +57,8 @@ func (r *Repository) List(ctx context.Context) ([]domain.User, error) {
 	}
 	return users, rows.Err()
 }
+func (r *Repository) RoleExists(ctx context.Context, role domain.Role) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE role=$1)`, role).Scan(&exists)
+	return exists, err
+}
