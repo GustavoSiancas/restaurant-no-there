@@ -9,6 +9,9 @@ import (
 	userapp "backend/internal/modules/users/application"
 	userhttp "backend/internal/modules/users/delivery/http"
 	userpg "backend/internal/modules/users/infrastructure/postgres"
+	workforceapp "backend/internal/modules/workforce/application"
+	workforcehttp "backend/internal/modules/workforce/delivery/http"
+	workforcepg "backend/internal/modules/workforce/infrastructure/postgres"
 	"context"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -41,6 +44,7 @@ func main() {
 	jwtService := jwtinfra.New(cfg.JWTSecret, cfg.AccessTTL)
 	usersHandler := userhttp.New(userapp.NewService(usersRepo))
 	authHandler := authhttp.New(authapp.NewService(usersRepo, tokensRepo, jwtService, cfg.RefreshTTL))
+	workforceHandler := workforcehttp.New(workforceapp.NewService(workforcepg.New(db), usersRepo))
 	r := gin.Default()
 	r.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
 	r.StaticFile("/openapi.yaml", "./docs/openapi.yaml")
@@ -54,6 +58,11 @@ func main() {
 	protected.Use(authhttp.RequireAuth(jwtService))
 	protected.POST("/users/register/management", authhttp.RequireRoles("ADMIN"), usersHandler.RegisterManagement)
 	protected.POST("/users/register/worker", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), usersHandler.RegisterWorker)
+	protected.POST("/workers/:id/information", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.CreateWorkerInformation)
+	protected.POST("/shifts", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.CreateShift)
+	protected.GET("/shifts", workforceHandler.ListShifts)
+	protected.POST("/worker-shift-assignments", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.AssignWorker)
+	protected.GET("/worker-shift-assignments", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.ListAssignments)
 	protected.GET("/users", usersHandler.List)
 	protected.GET("/users/:id", usersHandler.Get)
 	server := &http.Server{Addr: ":" + cfg.Port, Handler: r, ReadHeaderTimeout: 5 * time.Second}

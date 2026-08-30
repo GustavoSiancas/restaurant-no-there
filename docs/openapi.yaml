@@ -8,6 +8,7 @@ servers:
 tags:
   - name: Auth
   - name: Users
+  - name: Workforce
 paths:
   /auth/bootstrap/admin:
     post:
@@ -101,6 +102,68 @@ paths:
       responses:
         '200': {description: Usuario, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
         '404': {description: No encontrado}
+  /workers/{id}/information:
+    post:
+      tags: [Workforce]
+      summary: Registrar información laboral de un WORKER
+      description: Solo ADMIN, OWNER o RRHH. Se permite una ficha por trabajador.
+      security: [{bearerAuth: []}]
+      parameters: [{name: id, in: path, required: true, description: ID del usuario WORKER, schema: {type: string, format: uuid}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WorkerInformationRequest'}
+      responses:
+        '201': {description: Información creada}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {description: El trabajador ya tiene información laboral o el código está ocupado}
+  /shifts:
+    post:
+      tags: [Workforce]
+      summary: Crear un turno
+      description: Solo ADMIN, OWNER o RRHH.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ShiftRequest'}
+            example: {name: Turno especial, type: DIA, description: Jornada diurna de atención, start_time: '07:00', end_time: '16:00'}
+      responses:
+        '201': {description: Turno creado, content: {application/json: {schema: {$ref: '#/components/schemas/Shift'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {description: Ya existe un turno con ese nombre}
+    get:
+      tags: [Workforce]
+      summary: Listar turnos
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Turnos, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Shift'}}}}}
+  /worker-shift-assignments:
+    post:
+      tags: [Workforce]
+      summary: Agendar un trabajador en un turno
+      description: Solo ADMIN, OWNER o RRHH. Un trabajador puede tener como máximo un turno en una fecha.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AssignmentRequest'}
+      responses:
+        '201': {description: Asignación creada, content: {application/json: {schema: {$ref: '#/components/schemas/Assignment'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {description: El trabajador ya tiene un turno ese día}
+    get:
+      tags: [Workforce]
+      summary: Consultar calendario entre fechas
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: from, in: query, required: true, example: '2026-09-01', schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, example: '2026-09-30', schema: {type: string, format: date}}
+      responses:
+        '200': {description: Asignaciones, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Assignment'}}}}}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
@@ -136,6 +199,50 @@ components:
         email: {type: string, format: email}
         first_name: {type: string}
         last_name: {type: string}
+    WorkerInformationRequest:
+      type: object
+      required: [employee_code]
+      properties:
+        employee_code: {type: string, example: EMP-001}
+        job_title: {type: string, example: Operario}
+        department: {type: string, example: Producción}
+        phone: {type: string}
+        address: {type: string}
+        hire_date: {type: string, format: date}
+        emergency_contact_name: {type: string}
+        emergency_contact_phone: {type: string}
+        notes: {type: string}
+    ShiftRequest:
+      type: object
+      required: [name, type, description, start_time, end_time]
+      properties:
+        name: {type: string}
+        type: {type: string, enum: [DIA, NOCHE]}
+        description: {type: string}
+        start_time: {type: string, example: '08:00'}
+        end_time: {type: string, example: '17:00'}
+    Shift:
+      allOf:
+        - {$ref: '#/components/schemas/ShiftRequest'}
+        - type: object
+          properties:
+            id: {type: string, format: uuid}
+            active: {type: boolean}
+    AssignmentRequest:
+      type: object
+      required: [worker_id, shift_id, work_date]
+      properties:
+        worker_id: {type: string, format: uuid}
+        shift_id: {type: string, format: uuid}
+        work_date: {type: string, format: date}
+        notes: {type: string}
+    Assignment:
+      allOf:
+        - {$ref: '#/components/schemas/AssignmentRequest'}
+        - type: object
+          properties:
+            id: {type: string, format: uuid}
+            assigned_by: {type: string, format: uuid}
     PasswordLogin:
       type: object
       required: [username, password]
