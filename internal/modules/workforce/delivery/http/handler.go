@@ -58,45 +58,11 @@ func (h *Handler) RegisterWorker(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"user": user, "worker_information": info})
 }
 
-type shiftRequest struct {
-	Name        string           `json:"name"`
-	Type        domain.ShiftType `json:"type"`
-	Description string           `json:"description"`
-	StartTime   string           `json:"start_time"`
-	EndTime     string           `json:"end_time"`
-}
-
-func (h *Handler) CreateShift(c *gin.Context) {
-	var r shiftRequest
-	if c.ShouldBindJSON(&r) != nil {
-		c.JSON(400, gin.H{"error": "invalid JSON"})
-		return
-	}
-	shift, err := h.service.CreateShift(c, application.ShiftInput{Name: r.Name, Type: r.Type, Description: r.Description, StartTime: r.StartTime, EndTime: r.EndTime})
-	if err != nil {
-		status := 400
-		if errors.Is(err, core.ErrConflict) {
-			status = 409
-		}
-		c.JSON(status, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusCreated, shift)
-}
-func (h *Handler) ListShifts(c *gin.Context) {
-	shifts, err := h.service.ListShifts(c)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "could not list shifts"})
-		return
-	}
-	c.JSON(200, shifts)
-}
-
 type assignmentRequest struct {
-	WorkerID string `json:"worker_id"`
-	ShiftID  string `json:"shift_id"`
-	WorkDate string `json:"work_date"`
-	Notes    string `json:"notes"`
+	WorkerID  string           `json:"worker_id"`
+	ShiftType domain.ShiftType `json:"shift_type"`
+	WorkDate  string           `json:"work_date"`
+	Notes     string           `json:"notes"`
 }
 
 func (h *Handler) AssignWorker(c *gin.Context) {
@@ -115,7 +81,7 @@ func (h *Handler) AssignWorker(c *gin.Context) {
 		c.JSON(401, gin.H{"error": "authenticated user not found"})
 		return
 	}
-	a, err := h.service.AssignWorker(c, r.WorkerID, r.ShiftID, assignedBy.(string), date, r.Notes)
+	a, err := h.service.AssignWorker(c, r.WorkerID, r.ShiftType, assignedBy.(string), date, r.Notes)
 	if err != nil {
 		status := 400
 		if errors.Is(err, core.ErrConflict) {

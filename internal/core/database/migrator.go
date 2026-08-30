@@ -78,12 +78,10 @@ func baselineExistingSchema(ctx context.Context, db *pgxpool.Pool) error {
 	_, err := db.Exec(ctx, `
 		INSERT INTO schema_migrations(version)
 		SELECT 1 WHERE to_regclass('public.users') IS NOT NULL
-		  AND to_regclass('public.refresh_tokens') IS NOT NULL
-		ON CONFLICT DO NOTHING;
-		INSERT INTO schema_migrations(version)
-		SELECT 2 WHERE to_regclass('public.worker_information') IS NOT NULL
-		  AND to_regclass('public.shifts') IS NOT NULL
+		  AND to_regclass('public.user_profiles') IS NOT NULL
+		  AND to_regclass('public.user_credentials') IS NOT NULL
 		  AND to_regclass('public.worker_shift_assignments') IS NOT NULL
+		  AND to_regclass('public.meal_claims') IS NOT NULL
 		ON CONFLICT DO NOTHING;`)
 	return err
 }

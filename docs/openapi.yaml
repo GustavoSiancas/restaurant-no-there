@@ -9,6 +9,7 @@ tags:
   - name: Auth
   - name: Users
   - name: Workforce
+  - name: Meals
 paths:
   /auth/bootstrap/admin:
     post:
@@ -102,28 +103,6 @@ paths:
       responses:
         '200': {description: Usuario, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
         '404': {description: No encontrado}
-  /shifts:
-    post:
-      tags: [Workforce]
-      summary: Crear un turno
-      description: Solo ADMIN, OWNER o RRHH.
-      security: [{bearerAuth: []}]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: '#/components/schemas/ShiftRequest'}
-            example: {name: Turno especial, type: DIA, description: Jornada diurna de atención, start_time: '07:00', end_time: '16:00'}
-      responses:
-        '201': {description: Turno creado, content: {application/json: {schema: {$ref: '#/components/schemas/Shift'}}}}
-        '400': {$ref: '#/components/responses/BadRequest'}
-        '409': {description: Ya existe un turno con ese nombre}
-    get:
-      tags: [Workforce]
-      summary: Listar turnos
-      security: [{bearerAuth: []}]
-      responses:
-        '200': {description: Turnos, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Shift'}}}}}
   /worker-shift-assignments:
     post:
       tags: [Workforce]
@@ -148,6 +127,42 @@ paths:
         - {name: to, in: query, required: true, example: '2026-09-30', schema: {type: string, format: date}}
       responses:
         '200': {description: Asignaciones, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Assignment'}}}}}
+  /meal-claims:
+    post:
+      tags: [Meals]
+      summary: Reclamar una comida
+      description: Solo WORKER. Usa la fecha y hora actual de America/Lima y valida automáticamente el turno asignado. Cada tipo de comida puede reclamarse una sola vez al día.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MealClaimRequest'}
+      responses:
+        '201': {description: Reclamo creado, content: {application/json: {schema: {$ref: '#/components/schemas/MealClaim'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {description: La comida ya fue reclamada ese día}
+  /meal-claims/{id}/consume:
+    patch:
+      tags: [Meals]
+      summary: Confirmar que una comida fue consumida
+      description: Solo ADMIN, OWNER o RRHH. El usuario que confirma se obtiene del token.
+      security: [{bearerAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Consumo confirmado, content: {application/json: {schema: {$ref: '#/components/schemas/MealClaim'}}}}
+        '404': {description: Reclamo inexistente o ya consumido}
+  /meal-claims/report:
+    get:
+      tags: [Meals]
+      summary: Reporte de comidas reclamadas y consumidas
+      description: Solo ADMIN, OWNER o RRHH.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date}}
+      responses:
+        '200': {description: Totales por tipo de comida, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MealReportRow'}}}}}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
@@ -203,28 +218,12 @@ components:
             employee_code: {type: string}
             job_title: {type: string}
             department: {type: string}
-    ShiftRequest:
-      type: object
-      required: [name, type, description, start_time, end_time]
-      properties:
-        name: {type: string}
-        type: {type: string, enum: [DIA, NOCHE]}
-        description: {type: string}
-        start_time: {type: string, example: '08:00'}
-        end_time: {type: string, example: '17:00'}
-    Shift:
-      allOf:
-        - {$ref: '#/components/schemas/ShiftRequest'}
-        - type: object
-          properties:
-            id: {type: string, format: uuid}
-            active: {type: boolean}
     AssignmentRequest:
       type: object
-      required: [worker_id, shift_id, work_date]
+      required: [worker_id, shift_type, work_date]
       properties:
         worker_id: {type: string, format: uuid}
-        shift_id: {type: string, format: uuid}
+        shift_type: {type: string, enum: [DIA, NOCHE]}
         work_date: {type: string, format: date}
         notes: {type: string}
     Assignment:
@@ -234,6 +233,33 @@ components:
           properties:
             id: {type: string, format: uuid}
             assigned_by: {type: string, format: uuid}
+    MealClaimRequest:
+      type: object
+      required: [meal_type]
+      properties:
+        meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+        notes: {type: string}
+    MealClaim:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        worker_id: {type: string, format: uuid}
+        shift_assignment_id: {type: string, format: uuid}
+        meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+        service_date: {type: string, format: date}
+        claimed_at: {type: string, format: date-time}
+        consumed: {type: boolean}
+        consumed_at: {type: string, format: date-time}
+        consumption_registered_by: {type: string, format: uuid}
+    MealReportRow:
+      type: object
+      properties:
+        meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+        eligible: {type: integer}
+        claimed: {type: integer}
+        consumed: {type: integer}
+        not_consumed: {type: integer}
+        not_claimed: {type: integer}
     PasswordLogin:
       type: object
       required: [username, password]
@@ -257,11 +283,6 @@ components:
       type: object
       properties:
         id: {type: string, format: uuid}
-        username: {type: string}
-        dni: {type: string}
-        email: {type: string, format: email}
-        first_name: {type: string}
-        last_name: {type: string}
         role: {type: string, enum: [ADMIN, OWNER, RRHH, WORKER]}
         active: {type: boolean}
     Error:

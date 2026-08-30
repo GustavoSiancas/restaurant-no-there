@@ -7,6 +7,9 @@ import (
 	authhttp "backend/internal/modules/auth/delivery/http"
 	jwtinfra "backend/internal/modules/auth/infrastructure/jwt"
 	tokenpg "backend/internal/modules/auth/infrastructure/postgres"
+	mealapp "backend/internal/modules/meals/application"
+	mealhttp "backend/internal/modules/meals/delivery/http"
+	mealpg "backend/internal/modules/meals/infrastructure/postgres"
 	userapp "backend/internal/modules/users/application"
 	userhttp "backend/internal/modules/users/delivery/http"
 	userpg "backend/internal/modules/users/infrastructure/postgres"
@@ -49,6 +52,7 @@ func main() {
 	usersHandler := userhttp.New(userapp.NewService(usersRepo))
 	authHandler := authhttp.New(authapp.NewService(usersRepo, tokensRepo, jwtService, cfg.RefreshTTL))
 	workforceHandler := workforcehttp.New(workforceapp.NewService(workforcepg.New(db), usersRepo))
+	mealHandler := mealhttp.New(mealapp.NewService(mealpg.New(db)))
 	r := gin.Default()
 	r.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
 	r.StaticFile("/openapi.yaml", "./docs/openapi.yaml")
@@ -62,12 +66,13 @@ func main() {
 	protected.Use(authhttp.RequireAuth(jwtService))
 	protected.POST("/users/register/management", authhttp.RequireRoles("ADMIN"), usersHandler.RegisterManagement)
 	protected.POST("/users/register/worker", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.RegisterWorker)
-	protected.POST("/shifts", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.CreateShift)
-	protected.GET("/shifts", workforceHandler.ListShifts)
 	protected.POST("/worker-shift-assignments", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.AssignWorker)
 	protected.GET("/worker-shift-assignments", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.ListAssignments)
-	protected.GET("/users", usersHandler.List)
-	protected.GET("/users/:id", usersHandler.Get)
+	protected.POST("/meal-claims", authhttp.RequireRoles("WORKER"), mealHandler.Claim)
+	protected.PATCH("/meal-claims/:id/consume", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), mealHandler.MarkConsumed)
+	protected.GET("/meal-claims/report", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), mealHandler.Report)
+	protected.GET("/users", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), usersHandler.List)
+	protected.GET("/users/:id", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), usersHandler.Get)
 	server := &http.Server{Addr: ":" + cfg.Port, Handler: r, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Printf("API http://localhost:%s | Swagger http://localhost:%s/swagger/index.html", cfg.Port, cfg.Port)

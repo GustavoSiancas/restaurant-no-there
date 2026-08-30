@@ -31,8 +31,8 @@ type TokenPair struct {
 }
 
 func (s *Service) LoginPassword(ctx context.Context, username, password, agent, ip string) (*TokenPair, error) {
-	u, err := s.users.FindByUsername(ctx, username)
-	if err != nil || u.PasswordHash == nil || bcrypt.CompareHashAndPassword([]byte(*u.PasswordHash), []byte(password)) != nil {
+	u, passwordHash, err := s.users.FindPasswordCredential(ctx, username)
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)) != nil {
 		return nil, fmt.Errorf("invalid credentials")
 	}
 	if u.Role == userdomain.RoleWorker || !u.Active {

@@ -1,0 +1,75 @@
+package http
+
+import (
+	"errors"
+	"net/http"
+	"time"
+
+	core "backend/internal/core/domain"
+	"backend/internal/modules/meals/application"
+	"backend/internal/modules/meals/domain"
+	"github.com/gin-gonic/gin"
+)
+
+type Handler struct{ service *application.Service }
+
+func New(service *application.Service) *Handler { return &Handler{service: service} }
+
+type claimRequest struct {
+	MealType domain.MealType `json:"meal_type"`
+	Notes    string          `json:"notes"`
+}
+
+func (h *Handler) Claim(c *gin.Context) {
+	var r claimRequest
+	if c.ShouldBindJSON(&r) != nil {
+		c.JSON(400, gin.H{"error": "invalid JSON"})
+		return
+	}
+	workerID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(401, gin.H{"error": "authenticated user not found"})
+		return
+	}
+	claim, err := h.service.Claim(c, workerID.(string), r.MealType, r.Notes)
+	if err != nil {
+		status := 400
+		if errors.Is(err, core.ErrConflict) {
+			status = http.StatusConflict
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, claim)
+}
+func (h *Handler) MarkConsumed(c *gin.Context) {
+	registeredBy, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(401, gin.H{"error": "authenticated user not found"})
+		return
+	}
+	claim, err := h.service.MarkConsumed(c, c.Param("id"), registeredBy.(string))
+	if err != nil {
+		status := 500
+		if errors.Is(err, core.ErrNotFound) {
+			status = 404
+		}
+		c.JSON(status, gin.H{"error": "claim not found or already consumed"})
+		return
+	}
+	c.JSON(200, claim)
+}
+func (h *Handler) Report(c *gin.Context) {
+	from, e1 := time.Parse("2006-01-02", c.Query("from"))
+	to, e2 := time.Parse("2006-01-02", c.Query("to"))
+	if e1 != nil || e2 != nil {
+		c.JSON(400, gin.H{"error": "from and to must use YYYY-MM-DD"})
+		return
+	}
+	report, err := h.service.Report(c, from, to)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, report)
+}

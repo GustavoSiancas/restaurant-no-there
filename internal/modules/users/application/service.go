@@ -27,23 +27,19 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*domain.User,
 	if !in.Role.Valid() || strings.TrimSpace(in.FirstName) == "" || strings.TrimSpace(in.LastName) == "" {
 		return nil, fmt.Errorf("role, first_name and last_name are required")
 	}
-	u := &domain.User{Username: optional(in.Username), DNI: optional(in.DNI), Email: optional(in.Email), FirstName: strings.TrimSpace(in.FirstName), LastName: strings.TrimSpace(in.LastName), Role: in.Role}
 	if in.Role == domain.RoleWorker {
-		if u.DNI == nil || u.Username != nil || in.Password != "" {
-			return nil, fmt.Errorf("WORKER requires only dni and must not contain username or password")
-		}
-	} else {
-		if u.Username == nil || len(in.Password) < 8 || u.DNI != nil {
-			return nil, fmt.Errorf("ADMIN, OWNER and RRHH require username and password (minimum 8 characters), without dni")
-		}
-		hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
-		if err != nil {
-			return nil, err
-		}
-		value := string(hash)
-		u.PasswordHash = &value
+		return nil, fmt.Errorf("WORKER registration belongs to workforce service")
 	}
-	if err := s.repo.Create(ctx, u); err != nil {
+	if strings.TrimSpace(in.Username) == "" || len(in.Password) < 8 || strings.TrimSpace(in.DNI) != "" {
+		return nil, fmt.Errorf("ADMIN, OWNER and RRHH require username and password (minimum 8 characters), without dni")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	u := &domain.User{Role: in.Role}
+	profile := &domain.Profile{FirstName: strings.TrimSpace(in.FirstName), LastName: strings.TrimSpace(in.LastName), Email: optional(in.Email)}
+	if err := s.repo.CreateManagement(ctx, u, profile, strings.ToLower(strings.TrimSpace(in.Username)), string(hash)); err != nil {
 		return nil, err
 	}
 	return u, nil

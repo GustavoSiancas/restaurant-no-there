@@ -29,11 +29,6 @@ type RegisterWorkerInput struct {
 	EmergencyContactName, EmergencyContactPhone, Notes string
 }
 
-type ShiftInput struct {
-	Name, Description, StartTime, EndTime string
-	Type                                  domain.ShiftType
-}
-
 func nullable(value string) *string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -47,44 +42,15 @@ func (s *Service) RegisterWorker(ctx context.Context, in RegisterWorkerInput) (*
 	if dni == nil || strings.TrimSpace(in.FirstName) == "" || strings.TrimSpace(in.LastName) == "" || strings.TrimSpace(in.EmployeeCode) == "" {
 		return nil, nil, fmt.Errorf("dni, first_name, last_name and employee_code are required")
 	}
-	user := &userdomain.User{DNI: dni, Email: nullable(in.Email), FirstName: strings.TrimSpace(in.FirstName), LastName: strings.TrimSpace(in.LastName), Role: userdomain.RoleWorker}
-	info := &domain.WorkerInformation{EmployeeCode: strings.TrimSpace(in.EmployeeCode), JobTitle: nullable(in.JobTitle), Department: nullable(in.Department), Phone: nullable(in.Phone), Address: nullable(in.Address), HireDate: in.HireDate, EmergencyContactName: nullable(in.EmergencyContactName), EmergencyContactPhone: nullable(in.EmergencyContactPhone), Notes: nullable(in.Notes)}
-	if err := s.repo.CreateWorker(ctx, user, info); err != nil {
+	user := &userdomain.User{Role: userdomain.RoleWorker}
+	info := &domain.WorkerInformation{FirstName: strings.TrimSpace(in.FirstName), LastName: strings.TrimSpace(in.LastName), Email: nullable(in.Email), EmployeeCode: strings.TrimSpace(in.EmployeeCode), JobTitle: nullable(in.JobTitle), Department: nullable(in.Department), Phone: nullable(in.Phone), Address: nullable(in.Address), HireDate: in.HireDate, EmergencyContactName: nullable(in.EmergencyContactName), EmergencyContactPhone: nullable(in.EmergencyContactPhone), Notes: nullable(in.Notes)}
+	if err := s.repo.CreateWorker(ctx, user, info, *dni); err != nil {
 		return nil, nil, err
 	}
 	return user, info, nil
 }
 
-func (s *Service) CreateShift(ctx context.Context, in ShiftInput) (*domain.Shift, error) {
-	if in.Type != domain.ShiftDay && in.Type != domain.ShiftNight {
-		return nil, fmt.Errorf("type must be DIA or NOCHE")
-	}
-	if strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Description) == "" {
-		return nil, fmt.Errorf("name and description are required")
-	}
-	start, err := time.Parse("15:04", in.StartTime)
-	if err != nil {
-		return nil, fmt.Errorf("start_time must use HH:MM")
-	}
-	end, err := time.Parse("15:04", in.EndTime)
-	if err != nil {
-		return nil, fmt.Errorf("end_time must use HH:MM")
-	}
-	if start.Equal(end) {
-		return nil, fmt.Errorf("start_time and end_time must be different")
-	}
-	shift := &domain.Shift{Name: strings.TrimSpace(in.Name), Type: in.Type, Description: strings.TrimSpace(in.Description), StartTime: in.StartTime, EndTime: in.EndTime, Active: true}
-	if err = s.repo.CreateShift(ctx, shift); err != nil {
-		return nil, err
-	}
-	return shift, nil
-}
-
-func (s *Service) ListShifts(ctx context.Context) ([]domain.Shift, error) {
-	return s.repo.ListShifts(ctx)
-}
-
-func (s *Service) AssignWorker(ctx context.Context, workerID, shiftID, assignedBy string, date time.Time, notes string) (*domain.WorkerShiftAssignment, error) {
+func (s *Service) AssignWorker(ctx context.Context, workerID string, shiftType domain.ShiftType, assignedBy string, date time.Time, notes string) (*domain.WorkerShiftAssignment, error) {
 	if date.IsZero() {
 		return nil, fmt.Errorf("work_date is required")
 	}
@@ -95,9 +61,8 @@ func (s *Service) AssignWorker(ctx context.Context, workerID, shiftID, assignedB
 	if _, err = s.repo.FindWorkerInformation(ctx, workerID); err != nil {
 		return nil, fmt.Errorf("worker information must be registered first")
 	}
-	shift, err := s.repo.FindShift(ctx, shiftID)
-	if err != nil || !shift.Active {
-		return nil, fmt.Errorf("active shift not found")
+	if shiftType != domain.ShiftDay && shiftType != domain.ShiftNight {
+		return nil, fmt.Errorf("shift_type must be DIA or NOCHE")
 	}
 	_, err = s.repo.FindAssignmentByWorkerAndDate(ctx, workerID, date)
 	if err == nil {
@@ -106,7 +71,7 @@ func (s *Service) AssignWorker(ctx context.Context, workerID, shiftID, assignedB
 	if !errors.Is(err, core.ErrNotFound) {
 		return nil, err
 	}
-	a := &domain.WorkerShiftAssignment{WorkerID: workerID, ShiftID: shiftID, WorkDate: date, AssignedBy: assignedBy, Notes: nullable(notes)}
+	a := &domain.WorkerShiftAssignment{WorkerID: workerID, ShiftType: shiftType, WorkDate: date, AssignedBy: assignedBy, Notes: nullable(notes)}
 	if err = s.repo.CreateAssignment(ctx, a); err != nil {
 		return nil, err
 	}
