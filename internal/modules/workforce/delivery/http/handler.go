@@ -92,6 +92,39 @@ func (h *Handler) AssignWorker(c *gin.Context) {
 	}
 	c.JSON(http.StatusCreated, a)
 }
+
+type updateAssignmentRequest struct {
+	ShiftType domain.ShiftType `json:"shift_type"`
+	WorkDate  string           `json:"work_date"`
+	Notes     string           `json:"notes"`
+}
+
+func (h *Handler) UpdateAssignment(c *gin.Context) {
+	var r updateAssignmentRequest
+	if c.ShouldBindJSON(&r) != nil {
+		c.JSON(400, gin.H{"error": "invalid JSON"})
+		return
+	}
+	date, err := time.Parse("2006-01-02", r.WorkDate)
+	if err != nil {
+		c.JSON(400, gin.H{"error": "work_date must use YYYY-MM-DD"})
+		return
+	}
+	assignment, err := h.service.UpdateAssignment(c, c.Param("id"), r.ShiftType, date, r.Notes)
+	if err != nil {
+		status := 400
+		if errors.Is(err, core.ErrNotFound) {
+			status = 404
+		} else if errors.Is(err, core.ErrConflict) {
+			status = 409
+		} else if errors.Is(err, core.ErrLocked) {
+			status = 423
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, assignment)
+}
 func (h *Handler) ListAssignments(c *gin.Context) {
 	from, e1 := time.Parse("2006-01-02", c.Query("from"))
 	to, e2 := time.Parse("2006-01-02", c.Query("to"))

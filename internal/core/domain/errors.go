@@ -7,4 +7,5 @@ var (
 	ErrConflict     = errors.New("resource already exists")
 	ErrUnauthorized = errors.New("unauthorized")
 	ErrInvalidInput = errors.New("invalid input")
+	ErrLocked       = errors.New("resource is locked")
 )

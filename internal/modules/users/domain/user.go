@@ -39,3 +39,27 @@ const (
 	CredentialDNI      CredentialType = "DNI"
 	CredentialFaceScan CredentialType = "FACE_SCAN"
 )
+
+type PublicCredential struct {
+	Type       CredentialType `json:"type"`
+	Identifier string         `json:"identifier"`
+}
+
+type WorkerDetails struct {
+	EmployeeCode          string     `json:"employee_code"`
+	JobTitle              *string    `json:"job_title,omitempty"`
+	Department            *string    `json:"department,omitempty"`
+	Phone                 *string    `json:"phone,omitempty"`
+	Address               *string    `json:"address,omitempty"`
+	HireDate              *time.Time `json:"hire_date,omitempty"`
+	EmergencyContactName  *string    `json:"emergency_contact_name,omitempty"`
+	EmergencyContactPhone *string    `json:"emergency_contact_phone,omitempty"`
+	Notes                 *string    `json:"notes,omitempty"`
+}
+
+type MyUser struct {
+	User
+	Profile     Profile            `json:"profile"`
+	Credentials []PublicCredential `json:"credentials"`
+	Worker      *WorkerDetails     `json:"worker_information,omitempty"`
+}

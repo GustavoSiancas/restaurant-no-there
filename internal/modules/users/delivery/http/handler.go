@@ -68,3 +68,35 @@ func (h *Handler) Get(c *gin.Context) {
 	}
 	c.JSON(200, u)
 }
+
+func (h *Handler) My(c *gin.Context) {
+	userID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated user not found"})
+		return
+	}
+	user, err := h.service.FindMyUser(c, userID.(string))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	c.JSON(http.StatusOK, user)
+}
+
+func (h *Handler) Workers(c *gin.Context) {
+	users, err := h.service.ListByRoles(c, domain.RoleWorker)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list workers"})
+		return
+	}
+	c.JSON(http.StatusOK, users)
+}
+
+func (h *Handler) Management(c *gin.Context) {
+	users, err := h.service.ListByRoles(c, domain.RoleOwner, domain.RoleRRHH)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list management users"})
+		return
+	}
+	c.JSON(http.StatusOK, users)
+}

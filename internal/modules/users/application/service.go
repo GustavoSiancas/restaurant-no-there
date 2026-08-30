@@ -60,3 +60,11 @@ func (s *Service) List(ctx context.Context) ([]domain.User, error) { return s.re
 func (s *Service) FindByID(ctx context.Context, id string) (*domain.User, error) {
 	return s.repo.FindByID(ctx, id)
 }
+
+func (s *Service) FindMyUser(ctx context.Context, id string) (*domain.MyUser, error) {
+	return s.repo.FindMyUser(ctx, id)
+}
+
+func (s *Service) ListByRoles(ctx context.Context, roles ...domain.Role) ([]domain.MyUser, error) {
+	return s.repo.ListByRoles(ctx, roles...)
+}

@@ -9,6 +9,8 @@ import (
 type UserRepository interface {
 	CreateManagement(ctx context.Context, user *domain.User, profile *domain.Profile, username, passwordHash string) error
 	FindByID(ctx context.Context, id string) (*domain.User, error)
+	FindMyUser(ctx context.Context, id string) (*domain.MyUser, error)
+	ListByRoles(ctx context.Context, roles ...domain.Role) ([]domain.MyUser, error)
 	FindPasswordCredential(ctx context.Context, username string) (*domain.User, string, error)
 	FindByDNI(ctx context.Context, dni string) (*domain.User, error)
 	List(ctx context.Context) ([]domain.User, error)

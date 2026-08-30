@@ -94,6 +94,36 @@ paths:
       responses:
         '200': {description: Lista, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/User'}}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
+  /users/my:
+    get:
+      tags: [Users]
+      summary: Obtener mi usuario
+      description: Obtiene la identidad, rol, perfil y datos laborales del usuario identificado por el Bearer token.
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Usuario autenticado, content: {application/json: {schema: {$ref: '#/components/schemas/MyUser'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {description: Usuario no encontrado}
+  /users/workers:
+    get:
+      tags: [Users]
+      summary: Listar trabajadores
+      description: Disponible para ADMIN, OWNER y RRHH.
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Trabajadores, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MyUser'}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /users/management:
+    get:
+      tags: [Users]
+      summary: Listar OWNER y RRHH
+      description: Disponible únicamente para ADMIN.
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Usuarios OWNER y RRHH, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MyUser'}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /users/{id}:
     get:
       tags: [Users]
@@ -107,7 +137,7 @@ paths:
     post:
       tags: [Workforce]
       summary: Agendar un trabajador en un turno
-      description: Solo ADMIN, OWNER o RRHH. Un trabajador puede tener como máximo un turno en una fecha.
+      description: Solo ADMIN o RRHH. Un trabajador puede tener como máximo un turno por fecha y debe agendarse al menos un día antes.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
@@ -127,6 +157,24 @@ paths:
         - {name: to, in: query, required: true, example: '2026-09-30', schema: {type: string, format: date}}
       responses:
         '200': {description: Asignaciones, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Assignment'}}}}}
+  /worker-shift-assignments/{id}:
+    put:
+      tags: [Workforce]
+      summary: Modificar un turno asignado
+      description: Solo ADMIN o RRHH. Puede modificarse hasta el día anterior; en la fecha del turno queda bloqueado según America/Lima.
+      security: [{bearerAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateAssignmentRequest'}
+      responses:
+        '200': {description: Asignación actualizada, content: {application/json: {schema: {$ref: '#/components/schemas/Assignment'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {description: Asignación no encontrada}
+        '409': {description: El trabajador ya tiene otro turno en la nueva fecha}
+        '423': {description: El turno ya está bloqueado por fecha}
   /meal-claims:
     post:
       tags: [Meals]
@@ -226,6 +274,13 @@ components:
         shift_type: {type: string, enum: [DIA, NOCHE]}
         work_date: {type: string, format: date}
         notes: {type: string}
+    UpdateAssignmentRequest:
+      type: object
+      required: [shift_type, work_date]
+      properties:
+        shift_type: {type: string, enum: [DIA, NOCHE]}
+        work_date: {type: string, format: date}
+        notes: {type: string}
     Assignment:
       allOf:
         - {$ref: '#/components/schemas/AssignmentRequest'}
@@ -285,6 +340,30 @@ components:
         id: {type: string, format: uuid}
         role: {type: string, enum: [ADMIN, OWNER, RRHH, WORKER]}
         active: {type: boolean}
+    MyUser:
+      allOf:
+        - {$ref: '#/components/schemas/User'}
+        - type: object
+          properties:
+            profile:
+              type: object
+              properties:
+                first_name: {type: string}
+                last_name: {type: string}
+                email: {type: string, format: email}
+            credentials:
+              type: array
+              items:
+                type: object
+                properties:
+                  type: {type: string, enum: [PASSWORD, DNI, FACE_SCAN]}
+                  identifier: {type: string}
+            worker_information:
+              type: object
+              properties:
+                employee_code: {type: string}
+                job_title: {type: string}
+                department: {type: string}
     Error:
       type: object
       properties: {error: {type: string}}

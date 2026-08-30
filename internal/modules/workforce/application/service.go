@@ -16,10 +16,11 @@ import (
 type Service struct {
 	repo  Repository
 	users users.UserRepository
+	now   func() time.Time
 }
 
 func NewService(repo Repository, users users.UserRepository) *Service {
-	return &Service{repo: repo, users: users}
+	return &Service{repo: repo, users: users, now: time.Now}
 }
 
 type RegisterWorkerInput struct {
@@ -54,6 +55,10 @@ func (s *Service) AssignWorker(ctx context.Context, workerID string, shiftType d
 	if date.IsZero() {
 		return nil, fmt.Errorf("work_date is required")
 	}
+	date = s.peruDate(date)
+	if !date.After(s.peruToday()) {
+		return nil, fmt.Errorf("work_date must be at least one day in advance")
+	}
 	worker, err := s.users.FindByID(ctx, workerID)
 	if err != nil || worker.Role != userdomain.RoleWorker || !worker.Active {
 		return nil, fmt.Errorf("active WORKER not found")
@@ -76,6 +81,44 @@ func (s *Service) AssignWorker(ctx context.Context, workerID string, shiftType d
 		return nil, err
 	}
 	return a, nil
+}
+
+func (s *Service) UpdateAssignment(ctx context.Context, id string, shiftType domain.ShiftType, date time.Time, notes string) (*domain.WorkerShiftAssignment, error) {
+	if shiftType != domain.ShiftDay && shiftType != domain.ShiftNight {
+		return nil, fmt.Errorf("shift_type must be DIA or NOCHE")
+	}
+	today := s.peruToday()
+	date = s.peruDate(date)
+	existing, err := s.repo.FindAssignmentByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !s.peruDate(existing.WorkDate).After(today) {
+		return nil, fmt.Errorf("%w: shifts cannot be modified on or after their work date", core.ErrLocked)
+	}
+	if !date.After(today) {
+		return nil, fmt.Errorf("work_date must be at least one day in advance")
+	}
+	existing.ShiftType = shiftType
+	existing.WorkDate = date
+	existing.Notes = nullable(notes)
+	if err = s.repo.UpdateAssignment(ctx, existing); err != nil {
+		return nil, err
+	}
+	return existing, nil
+}
+
+func (s *Service) peruToday() time.Time { return s.peruDate(s.now().In(s.peruLocation())) }
+func (s *Service) peruDate(value time.Time) time.Time {
+	location := s.peruLocation()
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, location)
+}
+func (s *Service) peruLocation() *time.Location {
+	location, err := time.LoadLocation("America/Lima")
+	if err != nil {
+		return time.FixedZone("America/Lima", -5*60*60)
+	}
+	return location
 }
 
 func (s *Service) ListAssignments(ctx context.Context, from, to time.Time) ([]domain.WorkerShiftAssignment, error) {

@@ -62,6 +62,13 @@ func (r *Repository) CreateAssignment(ctx context.Context, a *domain.WorkerShift
 	err := r.db.QueryRow(ctx, `INSERT INTO worker_shift_assignments (worker_id,shift_type,work_date,assigned_by,notes) VALUES ($1,$2,$3,$4,$5) RETURNING id,created_at,updated_at`, a.WorkerID, a.ShiftType, a.WorkDate, a.AssignedBy, a.Notes).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
 	return translate(err)
 }
+func (r *Repository) FindAssignmentByID(ctx context.Context, id string) (*domain.WorkerShiftAssignment, error) {
+	return scanAssignment(r.db.QueryRow(ctx, `SELECT id,worker_id,shift_type,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE id=$1`, id))
+}
+func (r *Repository) UpdateAssignment(ctx context.Context, a *domain.WorkerShiftAssignment) error {
+	err := r.db.QueryRow(ctx, `UPDATE worker_shift_assignments SET shift_type=$2,work_date=$3,notes=$4,updated_at=NOW() WHERE id=$1 RETURNING updated_at`, a.ID, a.ShiftType, a.WorkDate, a.Notes).Scan(&a.UpdatedAt)
+	return translate(err)
+}
 func scanAssignment(row pgx.Row) (*domain.WorkerShiftAssignment, error) {
 	var a domain.WorkerShiftAssignment
 	err := row.Scan(&a.ID, &a.WorkerID, &a.ShiftType, &a.WorkDate, &a.AssignedBy, &a.Notes, &a.CreatedAt, &a.UpdatedAt)
