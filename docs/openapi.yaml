@@ -147,7 +147,7 @@ paths:
       responses:
         '201': {description: Asignación creada, content: {application/json: {schema: {$ref: '#/components/schemas/Assignment'}}}}
         '400': {$ref: '#/components/responses/BadRequest'}
-        '409': {description: El trabajador ya tiene un turno ese día}
+        '409': {description: El trabajador ya tiene un turno ese día, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentConflict'}}}}
     get:
       tags: [Workforce]
       summary: Consultar calendario entre fechas
@@ -175,6 +175,43 @@ paths:
         '404': {description: Asignación no encontrada}
         '409': {description: El trabajador ya tiene otro turno en la nueva fecha}
         '423': {description: El turno ya está bloqueado por fecha}
+  /workers/{id}/shifts:
+    get:
+      tags: [Workforce]
+      summary: Consultar turnos de un trabajador
+      description: Disponible para ADMIN, OWNER y RRHH. La fecha de hoy se incluye tanto en past como en upcoming.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: period, in: query, required: true, schema: {type: string, enum: [past, upcoming]}}
+      responses:
+        '200': {description: Turnos del trabajador, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Assignment'}}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /workers/{id}/shifts/range:
+    get:
+      tags: [Workforce]
+      summary: Consultar turnos de un trabajador entre fechas
+      description: Disponible para ADMIN, OWNER y RRHH. Incluye las fechas from y to.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: from, in: query, required: true, example: '2026-09-01', schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, example: '2026-09-30', schema: {type: string, format: date}}
+      responses:
+        '200': {description: Turnos en el rango, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Assignment'}}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /workers/my/status:
+    get:
+      tags: [Workforce, Meals]
+      summary: Consultar mi turno y alimentación actual
+      description: Solo WORKER. Obtiene el usuario desde el token y evalúa turno, horario de comida, elegibilidad, reclamo y consumo usando hora de Perú.
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Estado actual, content: {application/json: {schema: {$ref: '#/components/schemas/WorkerCurrentStatus'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /meal-claims:
     post:
       tags: [Meals]
@@ -281,6 +318,29 @@ components:
         shift_type: {type: string, enum: [DIA, NOCHE]}
         work_date: {type: string, format: date}
         notes: {type: string}
+    WorkerCurrentStatus:
+      type: object
+      properties:
+        peru_time: {type: string, format: date-time}
+        on_shift: {type: boolean}
+        current_shift:
+          type: object
+          properties:
+            assignment_id: {type: string, format: uuid}
+            shift_type: {type: string, enum: [DIA, NOCHE]}
+            work_date: {type: string, format: date}
+        meal_window_open: {type: boolean}
+        current_meal:
+          type: object
+          properties:
+            meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+            window_start: {type: string}
+            window_end: {type: string}
+            eligible: {type: boolean}
+            can_claim: {type: boolean}
+            already_claimed: {type: boolean}
+            consumed: {type: boolean}
+            claim_id: {type: string, format: uuid}
     Assignment:
       allOf:
         - {$ref: '#/components/schemas/AssignmentRequest'}
@@ -288,6 +348,22 @@ components:
           properties:
             id: {type: string, format: uuid}
             assigned_by: {type: string, format: uuid}
+    AssignmentConflict:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: {type: string, example: WORKER_ALREADY_ASSIGNED}
+            message: {type: string, example: El trabajador ya tiene un turno asignado para esa fecha}
+            worker_id: {type: string, format: uuid}
+            work_date: {type: string, format: date}
+            existing_shift:
+              type: object
+              properties:
+                assignment_id: {type: string, format: uuid}
+                shift_type: {type: string, enum: [DIA, NOCHE]}
+                notes: {type: string}
     MealClaimRequest:
       type: object
       required: [meal_type]

@@ -69,15 +69,20 @@ func (s *Service) AssignWorker(ctx context.Context, workerID string, shiftType d
 	if shiftType != domain.ShiftDay && shiftType != domain.ShiftNight {
 		return nil, fmt.Errorf("shift_type must be DIA or NOCHE")
 	}
-	_, err = s.repo.FindAssignmentByWorkerAndDate(ctx, workerID, date)
+	existingAssignment, err := s.repo.FindAssignmentByWorkerAndDate(ctx, workerID, date)
 	if err == nil {
-		return nil, fmt.Errorf("%w: worker already has a shift on this date", core.ErrConflict)
+		return nil, &domain.AssignmentConflictError{Existing: *existingAssignment}
 	}
 	if !errors.Is(err, core.ErrNotFound) {
 		return nil, err
 	}
 	a := &domain.WorkerShiftAssignment{WorkerID: workerID, ShiftType: shiftType, WorkDate: date, AssignedBy: assignedBy, Notes: nullable(notes)}
 	if err = s.repo.CreateAssignment(ctx, a); err != nil {
+		if errors.Is(err, core.ErrConflict) {
+			if occupied, findErr := s.repo.FindAssignmentByWorkerAndDate(ctx, workerID, date); findErr == nil {
+				return nil, &domain.AssignmentConflictError{Existing: *occupied}
+			}
+		}
 		return nil, err
 	}
 	return a, nil
@@ -98,6 +103,11 @@ func (s *Service) UpdateAssignment(ctx context.Context, id string, shiftType dom
 	}
 	if !date.After(today) {
 		return nil, fmt.Errorf("work_date must be at least one day in advance")
+	}
+	if occupied, findErr := s.repo.FindAssignmentByWorkerAndDate(ctx, existing.WorkerID, date); findErr == nil && occupied.ID != existing.ID {
+		return nil, &domain.AssignmentConflictError{Existing: *occupied}
+	} else if findErr != nil && !errors.Is(findErr, core.ErrNotFound) {
+		return nil, findErr
 	}
 	existing.ShiftType = shiftType
 	existing.WorkDate = date
@@ -126,4 +136,26 @@ func (s *Service) ListAssignments(ctx context.Context, from, to time.Time) ([]do
 		return nil, fmt.Errorf("valid from and to dates are required")
 	}
 	return s.repo.ListAssignments(ctx, from, to)
+}
+
+func (s *Service) ListWorkerAssignments(ctx context.Context, workerID, period string) ([]domain.WorkerShiftAssignment, error) {
+	worker, err := s.users.FindByID(ctx, workerID)
+	if err != nil || worker.Role != userdomain.RoleWorker {
+		return nil, fmt.Errorf("WORKER not found")
+	}
+	if period != "past" && period != "upcoming" {
+		return nil, fmt.Errorf("period must be past or upcoming")
+	}
+	return s.repo.ListWorkerAssignments(ctx, workerID, period, s.peruToday())
+}
+
+func (s *Service) ListWorkerAssignmentsRange(ctx context.Context, workerID string, from, to time.Time) ([]domain.WorkerShiftAssignment, error) {
+	worker, err := s.users.FindByID(ctx, workerID)
+	if err != nil || worker.Role != userdomain.RoleWorker {
+		return nil, fmt.Errorf("WORKER not found")
+	}
+	if from.IsZero() || to.IsZero() || to.Before(from) {
+		return nil, fmt.Errorf("valid from and to dates are required")
+	}
+	return s.repo.ListWorkerAssignmentsRange(ctx, workerID, s.peruDate(from), s.peruDate(to))
 }

@@ -44,3 +44,28 @@ type ReportRow struct {
 	NotConsumed int64    `json:"not_consumed"`
 	NotClaimed  int64    `json:"not_claimed"`
 }
+
+type CurrentShift struct {
+	AssignmentID string    `json:"assignment_id"`
+	ShiftType    string    `json:"shift_type"`
+	WorkDate     time.Time `json:"work_date"`
+}
+
+type CurrentMeal struct {
+	MealType       MealType `json:"meal_type"`
+	WindowStart    string   `json:"window_start"`
+	WindowEnd      string   `json:"window_end"`
+	Eligible       bool     `json:"eligible"`
+	CanClaim       bool     `json:"can_claim"`
+	AlreadyClaimed bool     `json:"already_claimed"`
+	Consumed       bool     `json:"consumed"`
+	ClaimID        *string  `json:"claim_id,omitempty"`
+}
+
+type WorkerStatus struct {
+	PeruTime       time.Time     `json:"peru_time"`
+	OnShift        bool          `json:"on_shift"`
+	CurrentShift   *CurrentShift `json:"current_shift,omitempty"`
+	MealWindowOpen bool          `json:"meal_window_open"`
+	CurrentMeal    *CurrentMeal  `json:"current_meal,omitempty"`
+}

@@ -73,3 +73,17 @@ func (h *Handler) Report(c *gin.Context) {
 	}
 	c.JSON(200, report)
 }
+
+func (h *Handler) WorkerStatus(c *gin.Context) {
+	workerID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated user not found"})
+		return
+	}
+	status, err := h.service.WorkerStatus(c, workerID.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not obtain worker status"})
+		return
+	}
+	c.JSON(http.StatusOK, status)
+}

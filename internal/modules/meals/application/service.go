@@ -2,10 +2,12 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	core "backend/internal/core/domain"
 	"backend/internal/modules/meals/domain"
 )
 
@@ -78,4 +80,74 @@ func (s *Service) Report(ctx context.Context, from, to time.Time) ([]domain.Repo
 		return nil, fmt.Errorf("valid from and to dates are required")
 	}
 	return s.repo.Report(ctx, from, to)
+}
+
+func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.WorkerStatus, error) {
+	location, err := time.LoadLocation("America/Lima")
+	if err != nil {
+		location = time.FixedZone("America/Lima", -5*60*60)
+	}
+	now := s.now().In(location)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+	status := &domain.WorkerStatus{PeruTime: now}
+	minutes := now.Hour()*60 + now.Minute()
+	shiftType := ""
+	shiftDate := today
+	if minutes >= 8*60 && minutes < 17*60 {
+		shiftType = "DIA"
+	} else if minutes >= 20*60 {
+		shiftType = "NOCHE"
+	} else if minutes < 5*60 {
+		shiftType = "NOCHE"
+		shiftDate = today.AddDate(0, 0, -1)
+	}
+	if shiftType != "" {
+		shift, findErr := s.repo.FindCurrentShift(ctx, workerID, shiftType, shiftDate)
+		if findErr == nil {
+			status.OnShift = true
+			status.CurrentShift = shift
+		} else if !errors.Is(findErr, core.ErrNotFound) {
+			return nil, findErr
+		}
+	}
+	rules, err := s.repo.ListRules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, rule := range rules {
+		start, parseErr := parseRuleTime(now, rule.ClaimStart)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		end, parseErr := parseRuleTime(now, rule.ClaimEnd)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		if now.Before(start) || !now.Before(end) {
+			continue
+		}
+		meal := &domain.CurrentMeal{MealType: rule.MealType, WindowStart: start.Format("15:04"), WindowEnd: end.Format("15:04")}
+		status.MealWindowOpen = true
+		status.CurrentMeal = meal
+		_, eligibleErr := s.repo.FindEligibleAssignment(ctx, workerID, rule.MealType, today)
+		if eligibleErr != nil {
+			if errors.Is(eligibleErr, core.ErrNotFound) {
+				return status, nil
+			}
+			return nil, eligibleErr
+		}
+		meal.Eligible = true
+		claim, claimErr := s.repo.FindClaim(ctx, workerID, rule.MealType, today)
+		if claimErr == nil {
+			meal.AlreadyClaimed = true
+			meal.Consumed = claim.Consumed
+			meal.ClaimID = &claim.ID
+		} else if errors.Is(claimErr, core.ErrNotFound) {
+			meal.CanClaim = true
+		} else {
+			return nil, claimErr
+		}
+		return status, nil
+	}
+	return status, nil
 }

@@ -83,11 +83,7 @@ func (h *Handler) AssignWorker(c *gin.Context) {
 	}
 	a, err := h.service.AssignWorker(c, r.WorkerID, r.ShiftType, assignedBy.(string), date, r.Notes)
 	if err != nil {
-		status := 400
-		if errors.Is(err, core.ErrConflict) {
-			status = 409
-		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writeAssignmentError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, a)
@@ -112,6 +108,11 @@ func (h *Handler) UpdateAssignment(c *gin.Context) {
 	}
 	assignment, err := h.service.UpdateAssignment(c, c.Param("id"), r.ShiftType, date, r.Notes)
 	if err != nil {
+		var conflict *domain.AssignmentConflictError
+		if errors.As(err, &conflict) {
+			writeAssignmentError(c, err)
+			return
+		}
 		status := 400
 		if errors.Is(err, core.ErrNotFound) {
 			status = 404
@@ -124,6 +125,20 @@ func (h *Handler) UpdateAssignment(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, assignment)
+}
+
+func writeAssignmentError(c *gin.Context, err error) {
+	var conflict *domain.AssignmentConflictError
+	if errors.As(err, &conflict) {
+		existing := conflict.Existing
+		c.JSON(http.StatusConflict, gin.H{"error": gin.H{"code": "WORKER_ALREADY_ASSIGNED", "message": "El trabajador ya tiene un turno asignado para esa fecha", "worker_id": existing.WorkerID, "work_date": existing.WorkDate.Format("2006-01-02"), "existing_shift": gin.H{"assignment_id": existing.ID, "shift_type": existing.ShiftType, "notes": existing.Notes}}})
+		return
+	}
+	status := http.StatusBadRequest
+	if errors.Is(err, core.ErrConflict) {
+		status = http.StatusConflict
+	}
+	c.JSON(status, gin.H{"error": gin.H{"code": "ASSIGNMENT_REJECTED", "message": err.Error()}})
 }
 func (h *Handler) ListAssignments(c *gin.Context) {
 	from, e1 := time.Parse("2006-01-02", c.Query("from"))
@@ -138,4 +153,28 @@ func (h *Handler) ListAssignments(c *gin.Context) {
 		return
 	}
 	c.JSON(200, items)
+}
+
+func (h *Handler) ListWorkerAssignments(c *gin.Context) {
+	items, err := h.service.ListWorkerAssignments(c, c.Param("id"), c.Query("period"))
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+func (h *Handler) ListWorkerAssignmentsRange(c *gin.Context) {
+	from, e1 := time.Parse("2006-01-02", c.Query("from"))
+	to, e2 := time.Parse("2006-01-02", c.Query("to"))
+	if e1 != nil || e2 != nil {
+		c.JSON(400, gin.H{"error": "from and to must use YYYY-MM-DD"})
+		return
+	}
+	items, err := h.service.ListWorkerAssignmentsRange(c, c.Param("id"), from, to)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, items)
 }
