@@ -83,6 +83,7 @@ func main() {
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/openapi.yaml")))
 	v1 := r.Group("/api/v1")
 	authLimit := authhttp.RateLimit(10, time.Minute)
+	v1.POST("/auth/bootstrap/admin", authLimit, usersHandler.BootstrapAdmin)
 	v1.POST("/auth/login/password", authLimit, authHandler.LoginPassword)
 	v1.POST("/auth/login/dni", authLimit, authHandler.LoginDNI)
 	v1.POST("/auth/refresh", authLimit, authHandler.Refresh)

@@ -11,6 +11,20 @@ tags:
   - name: Workforce
   - name: Meals
 paths:
+  /auth/bootstrap/admin:
+    post:
+      tags: [Auth]
+      summary: Crear temporalmente el primer ADMIN
+      description: Endpoint temporal. Solo funciona si todavía no existe ningún ADMIN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdminBootstrapRequest'}
+      responses:
+        '201': {description: ADMIN creado, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {description: Ya existe un ADMIN}
   /users/register/management:
     post:
       tags: [Users]
