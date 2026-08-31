@@ -198,10 +198,11 @@ func (s *Service) ShiftPreview(
 	page,
 	pageSize int,
 	paginate bool,
-    ) (*domain.ShiftPreview, error) {
+) (*domain.ShiftPreview, error) {
 
 	// ============================================================
 	// 1. NORMALIZAR FECHA
+	// Si no llega fecha, usar hoy en Perú.
 	// ============================================================
 	if date.IsZero() {
 		date = s.peruToday()
@@ -220,13 +221,11 @@ func (s *Service) ShiftPreview(
 
 	// ============================================================
 	// 2. VALIDAR FILTRO DE COMIDAS
-	// Si no llega meal_type, mealFilter queda vacío
-	// y eso significa "mostrar todas las comidas".
+	// Si mealTypes está vacío => no se filtra => muestra todas.
 	// ============================================================
 	mealFilter := make(map[string]bool)
 
 	for _, value := range mealTypes {
-
 		if value != "DESAYUNO" &&
 			value != "TARDE" &&
 			value != "NOCHE" {
@@ -249,13 +248,16 @@ func (s *Service) ShiftPreview(
 	)
 
 	// ============================================================
-	// 3. OBTENER TODOS LOS TURNOS DE ESA FECHA
-	// IMPORTANTE:
-	// Acá queremos DIA + NOCHE.
-	// Si devuelve 0, el problema está en el repository.
+	// 3. TRAER LOS TURNOS DE LA FECHA
+	// Queremos DIA + NOCHE.
+	//
+	// OJO:
+	// Todavía se manda nil porque tu repository sigue recibiendo
+	// el tercer parámetro.
+	//
+	// Si acá rows=0, el problema está en el repository.
 	// ============================================================
 	rows, err := s.repo.ListShiftPreview(ctx, date, nil)
-
 	if err != nil {
 		fmt.Printf(
 			"[SHIFT_PREVIEW] ERROR ListShiftPreview date=%s err=%v\n",
@@ -272,8 +274,6 @@ func (s *Service) ShiftPreview(
 		date.Format("2006-01-02"),
 	)
 
-	// Log de cada asignación encontrada.
-	// Temporalmente sirve bastante para Railway.
 	for i, row := range rows {
 		fmt.Printf(
 			"[SHIFT_PREVIEW] row[%d] assignmentID=%s shift=%s workDate=%s\n",
@@ -285,12 +285,9 @@ func (s *Service) ShiftPreview(
 	}
 
 	// ============================================================
-	// 4. OBTENER REGLAS ACTIVAS DE COMIDA
-	// Si por ejemplo DESAYUNO no aparece aquí,
-	// un filtro meal_type=DESAYUNO terminará en 0.
+	// 4. TRAER REGLAS ACTIVAS DE COMIDA
 	// ============================================================
 	rules, err := s.repo.ListActiveMealRules(ctx)
-
 	if err != nil {
 		fmt.Printf(
 			"[SHIFT_PREVIEW] ERROR ListActiveMealRules err=%v\n",
@@ -316,7 +313,7 @@ func (s *Service) ShiftPreview(
 	}
 
 	// ============================================================
-	// 5. RESUMEN INICIAL
+	// 5. INICIALIZAR RESUMEN
 	// ============================================================
 	summary := domain.ShiftPreviewSummary{
 		ByShift: map[string]int{
@@ -337,11 +334,11 @@ func (s *Service) ShiftPreview(
 	)
 
 	// ============================================================
-	// 6. PROCESAR CADA TRABAJADOR
+	// 6. PROCESAR CADA TURNO
 	// ============================================================
 	for _, row := range rows {
 
-		// Limpiar por seguridad si ya venía con comidas.
+		// Limpiar por seguridad si viniera ya con comidas.
 		row.AssignedMeals = nil
 
 		fmt.Printf(
@@ -352,21 +349,30 @@ func (s *Service) ShiftPreview(
 
 		for _, rule := range rules {
 
-			eligible :=
-				(
-					row.ShiftType == domain.ShiftDay &&
-						(
-							rule.MealType == "DESAYUNO" ||
-								rule.MealType == "TARDE"
-						)
-				) ||
-					(
-						row.ShiftType == domain.ShiftNight &&
-							(
-								rule.MealType == "NOCHE" ||
-									rule.MealType == "DESAYUNO"
-							)
-					)
+			// ====================================================
+			// REGLA DE COMIDAS SEGÚN TURNO
+			//
+			// DIA:
+			// - DESAYUNO
+			// - TARDE / ALMUERZO
+			//
+			// NOCHE:
+			// - NOCHE / CENA
+			// - DESAYUNO del día siguiente
+			// ====================================================
+			eligible := false
+
+			if row.ShiftType == domain.ShiftDay {
+				eligible =
+					rule.MealType == "DESAYUNO" ||
+						rule.MealType == "TARDE"
+			}
+
+			if row.ShiftType == domain.ShiftNight {
+				eligible =
+					rule.MealType == "NOCHE" ||
+						rule.MealType == "DESAYUNO"
+			}
 
 			fmt.Printf(
 				"[SHIFT_PREVIEW] check assignmentID=%s shift=%s meal=%s eligible=%v\n",
@@ -380,8 +386,11 @@ func (s *Service) ShiftPreview(
 				continue
 			}
 
-			// Si hay filtro de comida, solo dejamos pasar
-			// las comidas seleccionadas.
+			// ====================================================
+			// FILTRO DE COMIDA
+			// Si no mandaron meal_type, mealFilter está vacío
+			// y todas las comidas pasan.
+			// ====================================================
 			if len(mealFilter) > 0 &&
 				!mealFilter[rule.MealType] {
 
@@ -396,8 +405,8 @@ func (s *Service) ShiftPreview(
 
 			serviceDate := row.WorkDate
 
-			// Turno noche:
-			// su desayuno corresponde al día siguiente.
+			// El desayuno de turno noche corresponde
+			// al día siguiente.
 			if row.ShiftType == domain.ShiftNight &&
 				rule.MealType == "DESAYUNO" {
 
@@ -408,11 +417,16 @@ func (s *Service) ShiftPreview(
 				)
 			}
 
-			displayName := map[string]string{
-				"DESAYUNO": "DESAYUNO",
-				"TARDE":    "ALMUERZO",
-				"NOCHE":    "CENA",
-			}[rule.MealType]
+			displayName := ""
+
+			switch rule.MealType {
+			case "DESAYUNO":
+				displayName = "DESAYUNO"
+			case "TARDE":
+				displayName = "ALMUERZO"
+			case "NOCHE":
+				displayName = "CENA"
+			}
 
 			row.AssignedMeals = append(
 				row.AssignedMeals,
@@ -439,8 +453,10 @@ func (s *Service) ShiftPreview(
 			)
 		}
 
-		// Si pidieron filtro de comida y este trabajador
-		// no tiene ninguna de esas comidas, se excluye.
+		// ========================================================
+		// Si hubo filtro de comida y el trabajador no tiene
+		// ninguna comida coincidente, no se incluye.
+		// ========================================================
 		if len(mealFilter) > 0 &&
 			len(row.AssignedMeals) == 0 {
 
@@ -452,6 +468,9 @@ func (s *Service) ShiftPreview(
 			continue
 		}
 
+		// ========================================================
+		// CONTADORES
+		// ========================================================
 		summary.TotalAssigned++
 
 		summary.ByShift[string(row.ShiftType)]++
@@ -463,8 +482,9 @@ func (s *Service) ShiftPreview(
 		filtered = append(filtered, row)
 
 		fmt.Printf(
-			"[SHIFT_PREVIEW] worker included assignmentID=%s meals=%d\n",
+			"[SHIFT_PREVIEW] worker included assignmentID=%s shift=%s meals=%d\n",
 			row.AssignmentID,
+			row.ShiftType,
 			len(row.AssignedMeals),
 		)
 	}
@@ -496,7 +516,6 @@ func (s *Service) ShiftPreview(
 	data := filtered
 
 	if paginate {
-
 		start := (page - 1) * pageSize
 
 		if start > total {
