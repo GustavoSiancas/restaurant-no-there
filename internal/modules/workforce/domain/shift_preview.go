@@ -20,15 +20,14 @@ type PreviewMeal struct {
 type ShiftPreviewRow struct {
 	AssignmentID  string        `json:"assignment_id"`
 	ShiftType     ShiftType     `json:"shift_type"`
-	WorkDate      time.Time     `json:"work_date"`
+	WorkDate      time.Time     `json:"-"`
+	MealDate      string        `json:"meal_date"`
 	Worker        PreviewWorker `json:"worker"`
 	AssignedMeals []PreviewMeal `json:"assigned_meals"`
 }
 type PreviewRule struct{ MealType, Start, End string }
 type ShiftPreviewSummary struct {
-	TotalAssigned int            `json:"total_assigned"`
-	ByShift       map[string]int `json:"by_shift"`
-	ByMeal        map[string]int `json:"by_meal"`
+	ByMeal map[string]int `json:"by_meal"`
 }
 type ShiftPreview struct {
 	Date       time.Time           `json:"date"`
@@ -36,6 +35,5 @@ type ShiftPreview struct {
 	Data       []ShiftPreviewRow   `json:"data"`
 	Page       int                 `json:"page"`
 	PageSize   int                 `json:"page_size"`
-	Total      int                 `json:"total"`
 	TotalPages int                 `json:"total_pages"`
 }

@@ -371,9 +371,6 @@ paths:
       security: [{bearerAuth: []}]
       parameters:
         - {name: date, in: query, required: false, schema: {type: string, format: date}}
-
-        - {name: meal_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}}}
-
         - {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
 
         - {name: page_size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
@@ -389,7 +386,6 @@ paths:
       security: [{bearerAuth: []}]
       parameters:
         - {name: date, in: query, required: false, schema: {type: string, format: date}}
-        - {name: meal_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}}}
         - {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
         - {name: page_size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
       responses:
@@ -397,7 +393,8 @@ paths:
   /workforce/shift-preview/export.xlsx:
     get:
       tags: [Workforce]
-      summary: Exportar vista previa de turnos a Excel
+      summary: Exportar Comidas Dia Actual a Excel
+      description: Genera un archivo sin paginación con tres hojas (Desayunos, Almuerzos y Cenas); cada hoja muestra fecha, cantidad y todos los trabajadores asignados.
       security: [{bearerAuth: []}]
       parameters:
         - {name: date, in: query, required: false, schema: {type: string, format: date}}
@@ -407,6 +404,18 @@ paths:
       responses:
         '200':
           description: Archivo XLSX
+  /meal-preparation-preview/export.xlsx:
+    get:
+      tags: [Meals]
+      summary: Exportar Comidas Dia Actual a Excel
+      description: Genera un archivo sin paginación con tres hojas (Desayunos, Almuerzos y Cenas); cada hoja muestra fecha, cantidad y todos los trabajadores asignados.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: date, in: query, required: false, schema: {type: string, format: date}}
+        - {name: meal_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}}}
+      responses:
+        '200':
+          description: Archivo XLSX Comidas Dia Actual
           content:
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: {}
   /ws/meal-orders:

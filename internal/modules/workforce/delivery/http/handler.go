@@ -95,7 +95,7 @@ func (h *Handler) ShiftPreview(c *gin.Context) {
 }
 
 func (h *Handler) ExportShiftPreview(c *gin.Context) {
-	date, meals, _, _, err := previewQuery(c)
+	date, _, _, _, err := previewQuery(c)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
@@ -104,7 +104,7 @@ func (h *Handler) ExportShiftPreview(c *gin.Context) {
 	report, err := h.service.ShiftPreview(	
 		c,
 		date,
-		meals,
+		nil,
 		1,
 		20,
 		false,
@@ -120,10 +120,7 @@ func (h *Handler) ExportShiftPreview(c *gin.Context) {
 		return
 	}
 
-	name := fmt.Sprintf(
-		"turnos-%s.xlsx",
-		report.Date.Format("20060102"),
-	)
+	name := "Comidas Dia Actual.xlsx"
 
 	c.Header(
 		"Content-Disposition",

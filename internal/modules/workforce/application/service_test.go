@@ -94,7 +94,7 @@ func TestShiftPreviewAssignsMealsByShift(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if report.Total != 3 || report.Summary.ByMeal["DESAYUNO"] != 2 || report.Summary.ByMeal["TARDE"] != 1 || report.Summary.ByMeal["NOCHE"] != 1 {
+	if len(report.Data) != 3 || report.Summary.ByMeal["DESAYUNO"] != 2 || report.Summary.ByMeal["TARDE"] != 1 || report.Summary.ByMeal["NOCHE"] != 1 {
 		t.Fatalf("unexpected summary: %+v", report.Summary)
 	}
 	if len(report.Data[1].AssignedMeals) != 1 || report.Data[1].AssignedMeals[0].MealType != "NOCHE" {

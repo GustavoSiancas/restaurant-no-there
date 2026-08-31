@@ -312,10 +312,6 @@ func (s *Service) ShiftPreview(
 	// 5. INICIALIZAR RESUMEN
 	// ============================================================
 	summary := domain.ShiftPreviewSummary{
-		ByShift: map[string]int{
-			"DIA":   0,
-			"NOCHE": 0,
-		},
 		ByMeal: map[string]int{
 			"DESAYUNO": 0,
 			"TARDE":    0,
@@ -469,14 +465,11 @@ func (s *Service) ShiftPreview(
 
 			continue
 		}
+		row.MealDate = row.AssignedMeals[0].ServiceDate.Format("2006-01-02")
 
 		// ========================================================
 		// CONTADORES
 		// ========================================================
-		summary.TotalAssigned++
-
-		summary.ByShift[string(row.ShiftType)]++
-
 		for _, meal := range row.AssignedMeals {
 			summary.ByMeal[meal.MealType]++
 		}
@@ -537,14 +530,12 @@ func (s *Service) ShiftPreview(
 	// 8. LOG FINAL
 	// ============================================================
 	fmt.Printf(
-		"[SHIFT_PREVIEW] finished date=%s rowsRepo=%d filtered=%d pageData=%d totalPages=%d summaryTotal=%d byShift=%v byMeal=%v\n",
+		"[SHIFT_PREVIEW] finished date=%s rowsRepo=%d filtered=%d pageData=%d totalPages=%d byMeal=%v\n",
 		date.Format("2006-01-02"),
 		len(rows),
 		len(filtered),
 		len(data),
 		totalPages,
-		summary.TotalAssigned,
-		summary.ByShift,
 		summary.ByMeal,
 	)
 
@@ -554,7 +545,6 @@ func (s *Service) ShiftPreview(
 		Data:       data,
 		Page:       page,
 		PageSize:   pageSize,
-		Total:      total,
 		TotalPages: totalPages,
 	}, nil
 }
