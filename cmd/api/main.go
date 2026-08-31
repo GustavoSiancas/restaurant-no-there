@@ -146,6 +146,8 @@ func main() {
 	protected.GET("/meal-reports/export.xlsx", authhttp.RequireRoles("OWNER", "RRHH"), mealHandler.ExportDetailedReport)
 	protected.GET("/workforce/shift-preview", authhttp.RequireRoles("OWNER", "RRHH"), workforceHandler.ShiftPreview)
 	protected.GET("/workforce/shift-preview/export.xlsx", authhttp.RequireRoles("OWNER", "RRHH"), workforceHandler.ExportShiftPreview)
+	protected.GET("/meal-preparation-preview", authhttp.RequireRoles("OWNER", "RRHH"), workforceHandler.ShiftPreview)
+	protected.GET("/meal-preparation-preview/export.xlsx", authhttp.RequireRoles("OWNER", "RRHH"), workforceHandler.ExportShiftPreview)
 	protected.GET("/meal-schedules", mealHandler.ListSchedules)
 	protected.GET("/workers/my/status", authhttp.RequireRoles("WORKER"), mealHandler.WorkerStatus)
 	protected.GET("/users/my", usersHandler.My)

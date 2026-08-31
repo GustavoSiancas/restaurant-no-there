@@ -328,6 +328,7 @@ func (s *Service) ShiftPreview(
 		0,
 		len(rows),
 	)
+	seenMeals := make(map[string]bool)
 
 	// ============================================================
 	// 6. PROCESAR CADA TURNO
@@ -382,6 +383,25 @@ func (s *Service) ShiftPreview(
 				continue
 			}
 
+			serviceDate := row.WorkDate
+
+			// El desayuno de turno noche corresponde al día siguiente.
+			if row.ShiftType == domain.ShiftNight &&
+				rule.MealType == "DESAYUNO" {
+				serviceDate = serviceDate.AddDate(0, 0, 1)
+			}
+
+			// Este endpoint representa las comidas que deben prepararse en
+			// la fecha solicitada, no todas las comidas del turno consultado.
+			if serviceDate.Format("2006-01-02") != date.Format("2006-01-02") {
+				continue
+			}
+
+			mealKey := row.Worker.ID + "|" + rule.MealType + "|" + serviceDate.Format("2006-01-02")
+			if seenMeals[mealKey] {
+				continue
+			}
+
 			// ====================================================
 			// FILTRO DE COMIDA
 			// Si no mandaron meal_type, mealFilter está vacío
@@ -397,20 +417,6 @@ func (s *Service) ShiftPreview(
 				)
 
 				continue
-			}
-
-			serviceDate := row.WorkDate
-
-			// El desayuno de turno noche corresponde
-			// al día siguiente.
-			if row.ShiftType == domain.ShiftNight &&
-				rule.MealType == "DESAYUNO" {
-
-				serviceDate = serviceDate.AddDate(
-					0,
-					0,
-					1,
-				)
 			}
 
 			displayName := ""
@@ -440,6 +446,7 @@ func (s *Service) ShiftPreview(
 					),
 				},
 			)
+			seenMeals[mealKey] = true
 
 			fmt.Printf(
 				"[SHIFT_PREVIEW] meal added assignmentID=%s meal=%s serviceDate=%s\n",
@@ -450,11 +457,10 @@ func (s *Service) ShiftPreview(
 		}
 
 		// ========================================================
-		// Si hubo filtro de comida y el trabajador no tiene
-		// ninguna comida coincidente, no se incluye.
+		// Si el turno no aporta ninguna comida para la fecha solicitada,
+		// no forma parte de la lista de preparación.
 		// ========================================================
-		if len(mealFilter) > 0 &&
-			len(row.AssignedMeals) == 0 {
+		if len(row.AssignedMeals) == 0 {
 
 			fmt.Printf(
 				"[SHIFT_PREVIEW] worker excluded assignmentID=%s reason=no_matching_meal\n",

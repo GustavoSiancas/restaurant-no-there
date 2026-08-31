@@ -155,6 +155,7 @@ func (r *Repository) ListShiftPreview(
 			a.id,
 			a.shift_type,
 			a.work_date,
+			a.worker_id,
 			BTRIM(p.first_name || ' ' || p.last_name),
 			REPEAT('*', GREATEST(LENGTH(dni.identifier) - 4, 0))
 				|| RIGHT(dni.identifier, 4),
@@ -175,8 +176,10 @@ func (r *Repository) ListShiftPreview(
 			AND dni.active = TRUE
 
 		WHERE a.work_date = $1
+			OR (a.shift_type = 'NOCHE' AND a.work_date = ($1::date - 1))
 
 		ORDER BY
+			a.work_date,
 			p.first_name,
 			p.last_name
 		`,
@@ -198,6 +201,7 @@ func (r *Repository) ListShiftPreview(
 			&item.AssignmentID,
 			&item.ShiftType,
 			&item.WorkDate,
+			&item.Worker.ID,
 			&item.Worker.FullName,
 			&item.Worker.DocumentNumber,
 			&item.Worker.EmployeeCode,

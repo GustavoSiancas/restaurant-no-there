@@ -3,6 +3,7 @@ package domain
 import "time"
 
 type PreviewWorker struct {
+	ID             string  `json:"worker_id"`
 	FullName       string  `json:"full_name"`
 	DocumentNumber string  `json:"document_number"`
 	EmployeeCode   string  `json:"employee_code"`

@@ -88,17 +88,20 @@ func (f *fakeRepository) ListActiveMealRules(context.Context) ([]domain.PreviewR
 
 func TestShiftPreviewAssignsMealsByShift(t *testing.T) {
 	date := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	repo := &fakeRepository{preview: []domain.ShiftPreviewRow{{AssignmentID: "day", ShiftType: domain.ShiftDay, WorkDate: date}, {AssignmentID: "night", ShiftType: domain.ShiftNight, WorkDate: date}}, rules: []domain.PreviewRule{{MealType: "DESAYUNO", Start: "06:00:00", End: "10:00:00"}, {MealType: "TARDE", Start: "12:00:00", End: "15:00:00"}, {MealType: "NOCHE", Start: "18:00:00", End: "22:00:00"}}}
+	repo := &fakeRepository{preview: []domain.ShiftPreviewRow{{AssignmentID: "day", ShiftType: domain.ShiftDay, WorkDate: date, Worker: domain.PreviewWorker{ID: "day-worker"}}, {AssignmentID: "night", ShiftType: domain.ShiftNight, WorkDate: date, Worker: domain.PreviewWorker{ID: "night-worker"}}, {AssignmentID: "previous-night", ShiftType: domain.ShiftNight, WorkDate: date.AddDate(0, 0, -1), Worker: domain.PreviewWorker{ID: "previous-night-worker"}}}, rules: []domain.PreviewRule{{MealType: "DESAYUNO", Start: "06:00:00", End: "10:00:00"}, {MealType: "TARDE", Start: "12:00:00", End: "15:00:00"}, {MealType: "NOCHE", Start: "18:00:00", End: "22:00:00"}}}
 	service := NewService(repo, fakeUsers{})
 	report, err := service.ShiftPreview(context.Background(), date, nil, 1, 20, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if report.Total != 2 || report.Summary.ByMeal["DESAYUNO"] != 2 || report.Summary.ByMeal["TARDE"] != 1 || report.Summary.ByMeal["NOCHE"] != 1 {
+	if report.Total != 3 || report.Summary.ByMeal["DESAYUNO"] != 2 || report.Summary.ByMeal["TARDE"] != 1 || report.Summary.ByMeal["NOCHE"] != 1 {
 		t.Fatalf("unexpected summary: %+v", report.Summary)
 	}
-	if got := report.Data[1].AssignedMeals[0].ServiceDate; !got.Equal(date.AddDate(0, 0, 1)) {
-		t.Fatalf("night breakfast date=%v", got)
+	if len(report.Data[1].AssignedMeals) != 1 || report.Data[1].AssignedMeals[0].MealType != "NOCHE" {
+		t.Fatalf("current night must only include today's dinner: %+v", report.Data[1].AssignedMeals)
+	}
+	if len(report.Data[2].AssignedMeals) != 1 || report.Data[2].AssignedMeals[0].MealType != "DESAYUNO" || !report.Data[2].AssignedMeals[0].ServiceDate.Equal(date) {
+		t.Fatalf("previous night must only include today's breakfast: %+v", report.Data[2].AssignedMeals)
 	}
 }
 
