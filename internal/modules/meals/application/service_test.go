@@ -16,6 +16,7 @@ type fakeMealsRepository struct {
 	rules    []domain.ServiceRule
 	claim    *domain.Claim
 	closed   []domain.MealType
+	shift    *domain.CurrentShift
 }
 
 func (f *fakeMealsRepository) FindRule(context.Context, domain.MealType) (*domain.ServiceRule, error) {
@@ -25,7 +26,10 @@ func (f *fakeMealsRepository) ListRules(context.Context) ([]domain.ServiceRule, 
 	return f.rules, nil
 }
 func (f *fakeMealsRepository) FindCurrentShift(context.Context, string, string, time.Time) (*domain.CurrentShift, error) {
-	return nil, core.ErrNotFound
+	if f.shift == nil {
+		return nil, core.ErrNotFound
+	}
+	return f.shift, nil
 }
 func (f *fakeMealsRepository) FindClaim(context.Context, string, domain.MealType, time.Time) (*domain.Claim, error) {
 	if f.claim != nil {
@@ -159,9 +163,57 @@ func TestWorkerStatusShowsAvailableUnclaimedBreakfast(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if status.OnShift {
-		t.Fatal("06:30 is outside the fixed active shift hours")
+		t.Fatal("worker without a matching assignment must not be marked on shift")
 	}
 	if status.CurrentMeal == nil || !status.CurrentMeal.Eligible || !status.CurrentMeal.CanClaim || status.CurrentMeal.AlreadyClaimed {
 		t.Fatalf("unexpected meal status: %+v", status.CurrentMeal)
+	}
+}
+
+func TestNightShiftRemainsActiveThroughNextDayBreakfast(t *testing.T) {
+	previousDay := time.Date(2026, 9, 1, 0, 0, 0, 0, time.FixedZone("UTC-5", -5*60*60))
+	repo := &fakeMealsRepository{
+		eligible: true,
+		shift:    &domain.CurrentShift{AssignmentID: "night-assignment", ShiftType: "NOCHE", WorkDate: previousDay},
+		rules: []domain.ServiceRule{
+			{MealType: domain.Breakfast, ClaimStart: "06:00:00", ClaimEnd: "10:00:00", Timezone: "America/Lima", Active: true},
+			{MealType: domain.Afternoon, ClaimStart: "12:00:00", ClaimEnd: "15:00:00", Timezone: "America/Lima", Active: true},
+			{MealType: domain.Night, ClaimStart: "18:00:00", ClaimEnd: "22:00:00", Timezone: "America/Lima", Active: true},
+		},
+	}
+	service := NewService(repo, func() time.Time {
+		return time.Date(2026, 9, 2, 6, 30, 0, 0, time.FixedZone("UTC-5", -5*60*60))
+	})
+
+	preview, err := service.ClaimPreview(context.Background(), "worker")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if preview.Status != "AUTHORIZED" || preview.RedemptionID != "night-assignment" {
+		t.Fatalf("night breakfast should be authorized: %+v", preview)
+	}
+}
+
+func TestDayShiftIsActiveFromBreakfastStartThroughAfternoonEnd(t *testing.T) {
+	today := time.Date(2026, 9, 2, 0, 0, 0, 0, time.FixedZone("UTC-5", -5*60*60))
+	repo := &fakeMealsRepository{
+		eligible: true,
+		shift:    &domain.CurrentShift{AssignmentID: "day-assignment", ShiftType: "DIA", WorkDate: today},
+		rules: []domain.ServiceRule{
+			{MealType: domain.Breakfast, ClaimStart: "06:00:00", ClaimEnd: "10:00:00", Timezone: "America/Lima", Active: true},
+			{MealType: domain.Afternoon, ClaimStart: "12:00:00", ClaimEnd: "15:00:00", Timezone: "America/Lima", Active: true},
+			{MealType: domain.Night, ClaimStart: "18:00:00", ClaimEnd: "22:00:00", Timezone: "America/Lima", Active: true},
+		},
+	}
+	service := NewService(repo, func() time.Time {
+		return time.Date(2026, 9, 2, 11, 0, 0, 0, time.FixedZone("UTC-5", -5*60*60))
+	})
+
+	status, err := service.WorkerStatus(context.Background(), "worker")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !status.OnShift || status.CurrentShift == nil || status.CurrentShift.ShiftType != "DIA" {
+		t.Fatalf("day shift should remain active between meal windows: %+v", status)
 	}
 }

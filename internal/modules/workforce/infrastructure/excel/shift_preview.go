@@ -22,7 +22,7 @@ func BuildShiftPreview(report *domain.ShiftPreview) ([]byte, error) {
 			if j > 0 {
 				meals += " | "
 			}
-			meals += m.DisplayName + " " + m.Start + "-" + m.End
+			meals += m.DisplayName + " " + m.ServiceDate.Format("2006-01-02") + " " + m.Start + "-" + m.End
 		}
 		values := []any{row.Worker.FullName, row.Worker.DocumentNumber, row.Worker.EmployeeCode, text(row.Worker.JobTitle), text(row.Worker.Department), row.ShiftType, row.WorkDate.Format("2006-01-02"), meals}
 		for c, v := range values {

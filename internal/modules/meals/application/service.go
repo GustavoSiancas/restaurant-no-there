@@ -312,30 +312,68 @@ func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.Wo
 	now := s.now().In(location)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
 	status := &domain.WorkerStatus{PeruTime: now}
-	minutes := now.Hour()*60 + now.Minute()
-	shiftType := ""
-	shiftDate := today
-	if minutes >= 8*60 && minutes < 17*60 {
-		shiftType = "DIA"
-	} else if minutes >= 20*60 {
-		shiftType = "NOCHE"
-	} else if minutes < 5*60 {
-		shiftType = "NOCHE"
-		shiftDate = today.AddDate(0, 0, -1)
-	}
-	if shiftType != "" {
-		shift, findErr := s.repo.FindCurrentShift(ctx, workerID, shiftType, shiftDate)
-		if findErr == nil {
-			status.OnShift = true
-			status.CurrentShift = shift
-		} else if !errors.Is(findErr, core.ErrNotFound) {
-			return nil, findErr
-		}
-	}
 	rules, err := s.repo.ListRules(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	// El turno se determina con los horarios de comida configurados:
+	// DIA: inicio de DESAYUNO -> fin de TARDE.
+	// NOCHE: inicio de NOCHE -> fin de DESAYUNO del día siguiente.
+	// Durante DESAYUNO ambos tipos pueden ser elegibles; se intenta primero
+	// el turno NOCHE del día anterior y luego el turno DIA de hoy.
+	var breakfastStart, breakfastEnd, afternoonEnd, nightStart *time.Time
+	for _, rule := range rules {
+		if !rule.Active {
+			continue
+		}
+		start, parseErr := parseRuleTime(today, rule.ClaimStart)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		end, parseErr := parseRuleTime(today, rule.ClaimEnd)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		switch rule.MealType {
+		case domain.Breakfast:
+			breakfastStart, breakfastEnd = &start, &end
+		case domain.Afternoon:
+			afternoonEnd = &end
+		case domain.Night:
+			nightStart = &start
+		}
+	}
+
+	type shiftCandidate struct {
+		shiftType string
+		workDate  time.Time
+	}
+	candidates := make([]shiftCandidate, 0, 2)
+	if nightStart != nil && breakfastEnd != nil &&
+		(!now.Before(*nightStart) || now.Before(*breakfastEnd)) {
+		workDate := today
+		if now.Before(*breakfastEnd) {
+			workDate = today.AddDate(0, 0, -1)
+		}
+		candidates = append(candidates, shiftCandidate{"NOCHE", workDate})
+	}
+	if breakfastStart != nil && afternoonEnd != nil &&
+		!now.Before(*breakfastStart) && now.Before(*afternoonEnd) {
+		candidates = append(candidates, shiftCandidate{"DIA", today})
+	}
+	for _, candidate := range candidates {
+		shift, findErr := s.repo.FindCurrentShift(ctx, workerID, candidate.shiftType, candidate.workDate)
+		if findErr == nil {
+			status.OnShift = true
+			status.CurrentShift = shift
+			break
+		}
+		if !errors.Is(findErr, core.ErrNotFound) {
+			return nil, findErr
+		}
+	}
+
 	for _, rule := range rules {
 		if !rule.Active {
 			continue

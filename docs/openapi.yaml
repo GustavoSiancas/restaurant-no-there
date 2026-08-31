@@ -222,7 +222,7 @@ paths:
     get:
       tags: [Workforce, Meals]
       summary: Consultar mi turno y alimentación actual
-      description: Solo WORKER. Obtiene el usuario desde el token y evalúa turno, horario de comida, elegibilidad, reclamo y consumo usando hora de Perú.
+      description: Solo WORKER. Obtiene el usuario desde el token y evalúa turno, horario de comida, elegibilidad, reclamo y consumo usando hora de Perú. El turno DIA permanece activo desde el inicio de DESAYUNO hasta el fin de TARDE; el turno NOCHE, desde el inicio de NOCHE hasta el fin de DESAYUNO del día siguiente.
       security: [{bearerAuth: []}]
       responses:
         '200': {description: Estado actual, content: {application/json: {schema: {$ref: '#/components/schemas/WorkerCurrentStatus'}}}}

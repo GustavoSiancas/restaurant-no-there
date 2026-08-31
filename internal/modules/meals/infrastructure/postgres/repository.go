@@ -55,7 +55,9 @@ func (r *Repository) FindEligibleAssignment(ctx context.Context, workerID string
 			($2='DESAYUNO' AND ((a.shift_type='DIA' AND a.work_date=$3) OR (a.shift_type='NOCHE' AND a.work_date=($3::date - 1))))
 			OR ($2='TARDE' AND a.shift_type='DIA' AND a.work_date=$3)
 			OR ($2='NOCHE' AND a.shift_type='NOCHE' AND a.work_date=$3)
-		) LIMIT 1`, workerID, mealType, date).Scan(&id)
+		)
+		ORDER BY CASE WHEN a.shift_type='NOCHE' THEN 0 ELSE 1 END
+		LIMIT 1`, workerID, mealType, date).Scan(&id)
 	return id, translate(err)
 }
 func (r *Repository) FindCurrentShift(ctx context.Context, workerID, shiftType string, date time.Time) (*domain.CurrentShift, error) {
