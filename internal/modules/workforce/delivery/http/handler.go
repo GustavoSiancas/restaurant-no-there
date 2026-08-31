@@ -60,37 +60,69 @@ func previewQuery(c *gin.Context) (time.Time, []string, []string, int, int, erro
 	return date, c.QueryArray("meal_type"), c.QueryArray("shift_type"), page, pageSize, nil
 }
 func (h *Handler) ShiftPreview(c *gin.Context) {
-	date, meals, shifts, page, size, err := previewQuery(c)
+	date, meals, page, size, err := previewQuery(c)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	report, err := h.service.ShiftPreview(c, date, meals, shifts, page, size, true)
+
+	report, err := h.service.ShiftPreview(
+		c,
+		date,
+		meals,
+		page,
+		size,
+		true,
+	)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
+
 	c.JSON(200, report)
 }
+
 func (h *Handler) ExportShiftPreview(c *gin.Context) {
-	date, meals, shifts, _, _, err := previewQuery(c)
+	date, meals, _, _, err := previewQuery(c)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	report, err := h.service.ShiftPreview(c, date, meals, shifts, 1, 20, false)
+
+	report, err := h.service.ShiftPreview(
+		c,
+		date,
+		meals,
+		1,
+		20,
+		false,
+	)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
+
 	content, err := previewexcel.BuildShiftPreview(report)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "could not generate Excel report"})
 		return
 	}
-	name := fmt.Sprintf("turnos-%s.xlsx", report.Date.Format("20060102"))
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
-	c.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content)
+
+	name := fmt.Sprintf(
+		"turnos-%s.xlsx",
+		report.Date.Format("20060102"),
+	)
+
+	c.Header(
+		"Content-Disposition",
+		fmt.Sprintf(`attachment; filename="%s"`, name),
+	)
+
+	c.Data(
+		200,
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		content,
+	)
 }
 
 func (h *Handler) RegisterWorker(c *gin.Context) {
