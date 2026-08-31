@@ -42,23 +42,6 @@ func (h *Handler) Claim(c *gin.Context) {
 	}
 	c.JSON(http.StatusCreated, claim)
 }
-func (h *Handler) MarkConsumed(c *gin.Context) {
-	registeredBy, ok := c.Get("user_id")
-	if !ok {
-		c.JSON(401, gin.H{"error": "authenticated user not found"})
-		return
-	}
-	claim, err := h.service.MarkConsumed(c, c.Param("id"), registeredBy.(string))
-	if err != nil {
-		status := 500
-		if errors.Is(err, core.ErrNotFound) {
-			status = 404
-		}
-		c.JSON(status, gin.H{"error": "claim not found or already consumed"})
-		return
-	}
-	c.JSON(200, claim)
-}
 func (h *Handler) Report(c *gin.Context) {
 	from, e1 := time.Parse("2006-01-02", c.Query("from"))
 	to, e2 := time.Parse("2006-01-02", c.Query("to"))
@@ -72,6 +55,15 @@ func (h *Handler) Report(c *gin.Context) {
 		return
 	}
 	c.JSON(200, report)
+}
+
+func (h *Handler) ListSchedules(c *gin.Context) {
+	schedules, err := h.service.ListSchedules(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not obtain meal schedules"})
+		return
+	}
+	c.JSON(http.StatusOK, schedules)
 }
 
 func (h *Handler) WorkerStatus(c *gin.Context) {

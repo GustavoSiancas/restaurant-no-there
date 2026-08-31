@@ -14,6 +14,5 @@ type Repository interface {
 	FindCurrentShift(ctx context.Context, workerID, shiftType string, workDate time.Time) (*domain.CurrentShift, error)
 	FindClaim(ctx context.Context, workerID string, mealType domain.MealType, serviceDate time.Time) (*domain.Claim, error)
 	CreateClaim(ctx context.Context, claim *domain.Claim) error
-	MarkConsumed(ctx context.Context, claimID, registeredBy string, consumedAt time.Time) (*domain.Claim, error)
 	Report(ctx context.Context, from, to time.Time) ([]domain.ReportRow, error)
 }

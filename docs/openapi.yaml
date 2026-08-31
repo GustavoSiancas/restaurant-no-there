@@ -212,6 +212,20 @@ paths:
         '200': {description: Turnos en el rango, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Assignment'}}}}}
         '400': {$ref: '#/components/responses/BadRequest'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /workers/my/shifts/range:
+    get:
+      tags: [Workforce]
+      summary: Consultar mis turnos entre fechas
+      description: Solo WORKER. El trabajador se obtiene del Bearer Token; incluye las fechas from y to.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: from, in: query, required: true, example: '2026-09-01', schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, example: '2026-09-30', schema: {type: string, format: date}}
+      responses:
+        '200': {description: Turnos del trabajador autenticado en el rango, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Assignment'}}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /workers/my/status:
     get:
       tags: [Workforce, Meals]
@@ -222,6 +236,15 @@ paths:
         '200': {description: Estado actual, content: {application/json: {schema: {$ref: '#/components/schemas/WorkerCurrentStatus'}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /meal-schedules:
+    get:
+      tags: [Meals]
+      summary: Consultar los horarios de comidas
+      description: Disponible para cualquier usuario autenticado. Devuelve los horarios activos usando la zona horaria configurada.
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Horarios de comidas, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MealSchedule'}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
   /meal-claims:
     post:
       tags: [Meals]
@@ -237,20 +260,10 @@ paths:
         '201': {description: Reclamo creado, content: {application/json: {schema: {$ref: '#/components/schemas/MealClaim'}}}}
         '400': {$ref: '#/components/responses/BadRequest'}
         '409': {description: La comida ya fue reclamada ese día}
-  /meal-claims/{id}/consume:
-    patch:
-      tags: [Meals]
-      summary: Confirmar que una comida fue consumida
-      description: Solo ADMIN, OWNER o RRHH. El usuario que confirma se obtiene del token.
-      security: [{bearerAuth: []}]
-      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
-      responses:
-        '200': {description: Consumo confirmado, content: {application/json: {schema: {$ref: '#/components/schemas/MealClaim'}}}}
-        '404': {description: Reclamo inexistente o ya consumido}
   /meal-claims/report:
     get:
       tags: [Meals]
-      summary: Reporte de comidas reclamadas y consumidas
+      summary: Reporte de comidas reclamadas y no reclamadas
       description: Solo ADMIN, OWNER o RRHH.
       security: [{bearerAuth: []}]
       parameters:
@@ -349,7 +362,6 @@ components:
             eligible: {type: boolean}
             can_claim: {type: boolean}
             already_claimed: {type: boolean}
-            consumed: {type: boolean}
             claim_id: {type: string, format: uuid}
     Assignment:
       allOf:
@@ -374,6 +386,15 @@ components:
                 assignment_id: {type: string, format: uuid}
                 shift_type: {type: string, enum: [DIA, NOCHE]}
                 notes: {type: string}
+    MealSchedule:
+      type: object
+      properties:
+        meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+        claim_start: {type: string, example: '06:00:00'}
+        claim_end: {type: string, example: '10:00:00'}
+        timezone: {type: string, example: America/Lima}
+        description: {type: string}
+        active: {type: boolean}
     MealClaimRequest:
       type: object
       required: [meal_type]
@@ -389,17 +410,13 @@ components:
         meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
         service_date: {type: string, format: date}
         claimed_at: {type: string, format: date-time}
-        consumed: {type: boolean}
-        consumed_at: {type: string, format: date-time}
-        consumption_registered_by: {type: string, format: uuid}
+        notes: {type: string}
     MealReportRow:
       type: object
       properties:
         meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
         eligible: {type: integer}
         claimed: {type: integer}
-        consumed: {type: integer}
-        not_consumed: {type: integer}
         not_claimed: {type: integer}
     PasswordLogin:
       type: object

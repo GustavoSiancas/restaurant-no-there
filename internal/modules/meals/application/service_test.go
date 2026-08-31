@@ -43,9 +43,6 @@ func (f *fakeMealsRepository) CreateClaim(_ context.Context, c *domain.Claim) er
 	c.ID = "claim"
 	return nil
 }
-func (f *fakeMealsRepository) MarkConsumed(context.Context, string, string, time.Time) (*domain.Claim, error) {
-	return nil, nil
-}
 func (f *fakeMealsRepository) Report(context.Context, time.Time, time.Time) ([]domain.ReportRow, error) {
 	return nil, nil
 }

@@ -66,19 +66,16 @@ func (r *Repository) FindCurrentShift(ctx context.Context, workerID, shiftType s
 	return &shift, err
 }
 func (r *Repository) CreateClaim(ctx context.Context, c *domain.Claim) error {
-	err := r.db.QueryRow(ctx, `INSERT INTO meal_claims(worker_id,shift_assignment_id,meal_type,service_date,claimed_at,notes) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,consumed,created_at,updated_at`, c.WorkerID, c.ShiftAssignmentID, c.MealType, c.ServiceDate, c.ClaimedAt, c.Notes).Scan(&c.ID, &c.Consumed, &c.CreatedAt, &c.UpdatedAt)
+	err := r.db.QueryRow(ctx, `INSERT INTO meal_claims(worker_id,shift_assignment_id,meal_type,service_date,claimed_at,notes) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,created_at,updated_at`, c.WorkerID, c.ShiftAssignmentID, c.MealType, c.ServiceDate, c.ClaimedAt, c.Notes).Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt)
 	return translate(err)
 }
 func scanClaim(row pgx.Row) (*domain.Claim, error) {
 	var c domain.Claim
-	err := row.Scan(&c.ID, &c.WorkerID, &c.ShiftAssignmentID, &c.MealType, &c.ServiceDate, &c.ClaimedAt, &c.Consumed, &c.ConsumedAt, &c.ConsumptionRegisteredBy, &c.Notes, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.WorkerID, &c.ShiftAssignmentID, &c.MealType, &c.ServiceDate, &c.ClaimedAt, &c.Notes, &c.CreatedAt, &c.UpdatedAt)
 	return &c, translate(err)
 }
 func (r *Repository) FindClaim(ctx context.Context, workerID string, mealType domain.MealType, date time.Time) (*domain.Claim, error) {
-	return scanClaim(r.db.QueryRow(ctx, `SELECT id,worker_id,shift_assignment_id,meal_type,service_date,claimed_at,consumed,consumed_at,consumption_registered_by,notes,created_at,updated_at FROM meal_claims WHERE worker_id=$1 AND meal_type=$2 AND service_date=$3`, workerID, mealType, date))
-}
-func (r *Repository) MarkConsumed(ctx context.Context, id, by string, at time.Time) (*domain.Claim, error) {
-	return scanClaim(r.db.QueryRow(ctx, `UPDATE meal_claims SET consumed=TRUE,consumed_at=$2,consumption_registered_by=$3,updated_at=NOW() WHERE id=$1 AND consumed=FALSE RETURNING id,worker_id,shift_assignment_id,meal_type,service_date,claimed_at,consumed,consumed_at,consumption_registered_by,notes,created_at,updated_at`, id, at, by))
+	return scanClaim(r.db.QueryRow(ctx, `SELECT id,worker_id,shift_assignment_id,meal_type,service_date,claimed_at,notes,created_at,updated_at FROM meal_claims WHERE worker_id=$1 AND meal_type=$2 AND service_date=$3`, workerID, mealType, date))
 }
 func (r *Repository) Report(ctx context.Context, from, to time.Time) ([]domain.ReportRow, error) {
 	rows, err := r.db.Query(ctx, `WITH eligible AS (
@@ -90,9 +87,7 @@ func (r *Repository) Report(ctx context.Context, from, to time.Time) ([]domain.R
 		UNION
 		SELECT worker_id, work_date + 1, 'DESAYUNO'::meal_type FROM worker_shift_assignments WHERE shift_type='NOCHE'
 	), types(meal_type) AS (VALUES ('DESAYUNO'::meal_type),('TARDE'::meal_type),('NOCHE'::meal_type))
-	SELECT t.meal_type,
-		COUNT(e.worker_id), COUNT(c.id), COUNT(c.id) FILTER(WHERE c.consumed),
-		COUNT(c.id) FILTER(WHERE NOT c.consumed), COUNT(e.worker_id)-COUNT(c.id)
+	SELECT t.meal_type, COUNT(e.worker_id), COUNT(c.id), COUNT(e.worker_id)-COUNT(c.id)
 	FROM types t LEFT JOIN eligible e ON e.meal_type=t.meal_type AND e.service_date BETWEEN $1 AND $2
 	LEFT JOIN meal_claims c ON c.worker_id=e.worker_id AND c.meal_type=e.meal_type AND c.service_date=e.service_date
 	GROUP BY t.meal_type ORDER BY t.meal_type`, from, to)
@@ -103,7 +98,7 @@ func (r *Repository) Report(ctx context.Context, from, to time.Time) ([]domain.R
 	result := make([]domain.ReportRow, 0)
 	for rows.Next() {
 		var item domain.ReportRow
-		if err = rows.Scan(&item.MealType, &item.Eligible, &item.Claimed, &item.Consumed, &item.NotConsumed, &item.NotClaimed); err != nil {
+		if err = rows.Scan(&item.MealType, &item.Eligible, &item.Claimed, &item.NotClaimed); err != nil {
 			return nil, err
 		}
 		result = append(result, item)

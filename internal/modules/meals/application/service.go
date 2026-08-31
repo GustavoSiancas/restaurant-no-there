@@ -72,14 +72,15 @@ func optional(value string) *string {
 	}
 	return &value
 }
-func (s *Service) MarkConsumed(ctx context.Context, claimID, registeredBy string) (*domain.Claim, error) {
-	return s.repo.MarkConsumed(ctx, claimID, registeredBy, s.now())
-}
 func (s *Service) Report(ctx context.Context, from, to time.Time) ([]domain.ReportRow, error) {
 	if from.IsZero() || to.IsZero() || to.Before(from) {
 		return nil, fmt.Errorf("valid from and to dates are required")
 	}
 	return s.repo.Report(ctx, from, to)
+}
+
+func (s *Service) ListSchedules(ctx context.Context) ([]domain.ServiceRule, error) {
+	return s.repo.ListRules(ctx)
 }
 
 func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.WorkerStatus, error) {
@@ -140,7 +141,6 @@ func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.Wo
 		claim, claimErr := s.repo.FindClaim(ctx, workerID, rule.MealType, today)
 		if claimErr == nil {
 			meal.AlreadyClaimed = true
-			meal.Consumed = claim.Consumed
 			meal.ClaimID = &claim.ID
 		} else if errors.Is(claimErr, core.ErrNotFound) {
 			meal.CanClaim = true

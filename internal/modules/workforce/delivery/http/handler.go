@@ -196,3 +196,23 @@ func (h *Handler) ListWorkerAssignmentsRange(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, items)
 }
+
+func (h *Handler) ListMyAssignmentsRange(c *gin.Context) {
+	workerID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated user not found"})
+		return
+	}
+	from, e1 := time.Parse("2006-01-02", c.Query("from"))
+	to, e2 := time.Parse("2006-01-02", c.Query("to"))
+	if e1 != nil || e2 != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "from and to must use YYYY-MM-DD"})
+		return
+	}
+	items, err := h.service.ListWorkerAssignmentsRange(c, workerID.(string), from, to)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}

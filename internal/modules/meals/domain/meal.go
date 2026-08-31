@@ -22,27 +22,22 @@ type ServiceRule struct {
 }
 
 type Claim struct {
-	ID                      string     `json:"id"`
-	WorkerID                string     `json:"worker_id"`
-	ShiftAssignmentID       string     `json:"shift_assignment_id"`
-	MealType                MealType   `json:"meal_type"`
-	ServiceDate             time.Time  `json:"service_date"`
-	ClaimedAt               time.Time  `json:"claimed_at"`
-	Consumed                bool       `json:"consumed"`
-	ConsumedAt              *time.Time `json:"consumed_at,omitempty"`
-	ConsumptionRegisteredBy *string    `json:"consumption_registered_by,omitempty"`
-	Notes                   *string    `json:"notes,omitempty"`
-	CreatedAt               time.Time  `json:"created_at"`
-	UpdatedAt               time.Time  `json:"updated_at"`
+	ID                string    `json:"id"`
+	WorkerID          string    `json:"worker_id"`
+	ShiftAssignmentID string    `json:"shift_assignment_id"`
+	MealType          MealType  `json:"meal_type"`
+	ServiceDate       time.Time `json:"service_date"`
+	ClaimedAt         time.Time `json:"claimed_at"`
+	Notes             *string   `json:"notes,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type ReportRow struct {
-	MealType    MealType `json:"meal_type"`
-	Eligible    int64    `json:"eligible"`
-	Claimed     int64    `json:"claimed"`
-	Consumed    int64    `json:"consumed"`
-	NotConsumed int64    `json:"not_consumed"`
-	NotClaimed  int64    `json:"not_claimed"`
+	MealType   MealType `json:"meal_type"`
+	Eligible   int64    `json:"eligible"`
+	Claimed    int64    `json:"claimed"`
+	NotClaimed int64    `json:"not_claimed"`
 }
 
 type CurrentShift struct {
@@ -58,7 +53,6 @@ type CurrentMeal struct {
 	Eligible       bool     `json:"eligible"`
 	CanClaim       bool     `json:"can_claim"`
 	AlreadyClaimed bool     `json:"already_claimed"`
-	Consumed       bool     `json:"consumed"`
 	ClaimID        *string  `json:"claim_id,omitempty"`
 }
 

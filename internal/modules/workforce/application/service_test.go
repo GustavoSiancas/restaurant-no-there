@@ -117,3 +117,30 @@ func TestDeleteAssignmentIsLockedOnWorkDate(t *testing.T) {
 		t.Fatal("locked assignment must not be deleted")
 	}
 }
+
+func TestAssignWorkerRequiresAtLeastTomorrow(t *testing.T) {
+	peru := time.FixedZone("UTC-5", -5*60*60)
+	tests := []struct {
+		name      string
+		date      time.Time
+		wantError bool
+	}{{name: "yesterday is rejected", date: time.Date(2026, 8, 29, 0, 0, 0, 0, peru), wantError: true}, {name: "today is rejected", date: time.Date(2026, 8, 30, 0, 0, 0, 0, peru), wantError: true}, {name: "tomorrow is allowed", date: time.Date(2026, 8, 31, 0, 0, 0, 0, peru)}}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &fakeRepository{}
+			user := &userdomain.User{Entity: core.Entity{ID: "worker"}, Role: userdomain.RoleWorker, Active: true}
+			service := NewService(repo, fakeUsers{user: user})
+			service.now = func() time.Time { return time.Date(2026, 8, 30, 23, 59, 0, 0, peru) }
+			_, err := service.AssignWorker(context.Background(), "worker", domain.ShiftDay, "rrhh", test.date, "")
+			if test.wantError && err == nil {
+				t.Fatal("expected date validation error")
+			}
+			if !test.wantError && err != nil {
+				t.Fatalf("expected assignment to be allowed, got %v", err)
+			}
+			if repo.created == test.wantError {
+				t.Fatalf("created=%v, want %v", repo.created, !test.wantError)
+			}
+		})
+	}
+}
