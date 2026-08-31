@@ -311,7 +311,7 @@ func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.Wo
 	location := s.peruLocation()
 	now := s.now().In(location)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
-	status := &domain.WorkerStatus{PeruTime: now}
+	status := &domain.WorkerStatus{PeruTime: now, AssignedMeals: make([]domain.AssignedMeal, 0)}
 	rules, err := s.repo.ListRules(ctx)
 	if err != nil {
 		return nil, err
@@ -371,6 +371,33 @@ func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.Wo
 		}
 		if !errors.Is(findErr, core.ErrNotFound) {
 			return nil, findErr
+		}
+	}
+
+	if status.CurrentShift != nil {
+		activeMeals := make(map[domain.MealType]bool, len(rules))
+		for _, rule := range rules {
+			if rule.Active {
+				activeMeals[rule.MealType] = true
+			}
+		}
+		appendMeal := func(mealType domain.MealType, displayName string, serviceDate time.Time) {
+			if !activeMeals[mealType] {
+				return
+			}
+			status.AssignedMeals = append(status.AssignedMeals, domain.AssignedMeal{
+				MealType:    mealType,
+				DisplayName: displayName,
+				ServiceDate: serviceDate.Format("2006-01-02"),
+			})
+		}
+		switch status.CurrentShift.ShiftType {
+		case "DIA":
+			appendMeal(domain.Breakfast, "Desayuno", status.CurrentShift.WorkDate)
+			appendMeal(domain.Afternoon, "Almuerzo", status.CurrentShift.WorkDate)
+		case "NOCHE":
+			appendMeal(domain.Night, "Cena", status.CurrentShift.WorkDate)
+			appendMeal(domain.Breakfast, "Desayuno", status.CurrentShift.WorkDate.AddDate(0, 0, 1))
 		}
 	}
 

@@ -192,6 +192,15 @@ func TestNightShiftRemainsActiveThroughNextDayBreakfast(t *testing.T) {
 	if preview.Status != "AUTHORIZED" || preview.RedemptionID != "night-assignment" {
 		t.Fatalf("night breakfast should be authorized: %+v", preview)
 	}
+	status, err := service.WorkerStatus(context.Background(), "worker")
+	if err != nil {
+		t.Fatalf("unexpected status error: %v", err)
+	}
+	if len(status.AssignedMeals) != 2 ||
+		status.AssignedMeals[0].DisplayName != "Cena" || status.AssignedMeals[0].ServiceDate != "2026-09-01" ||
+		status.AssignedMeals[1].DisplayName != "Desayuno" || status.AssignedMeals[1].ServiceDate != "2026-09-02" {
+		t.Fatalf("unexpected night assigned meals: %+v", status.AssignedMeals)
+	}
 }
 
 func TestDayShiftIsActiveFromBreakfastStartThroughAfternoonEnd(t *testing.T) {
@@ -215,5 +224,10 @@ func TestDayShiftIsActiveFromBreakfastStartThroughAfternoonEnd(t *testing.T) {
 	}
 	if !status.OnShift || status.CurrentShift == nil || status.CurrentShift.ShiftType != "DIA" {
 		t.Fatalf("day shift should remain active between meal windows: %+v", status)
+	}
+	if len(status.AssignedMeals) != 2 ||
+		status.AssignedMeals[0].DisplayName != "Desayuno" || status.AssignedMeals[0].ServiceDate != "2026-09-02" ||
+		status.AssignedMeals[1].DisplayName != "Almuerzo" || status.AssignedMeals[1].ServiceDate != "2026-09-02" {
+		t.Fatalf("unexpected day assigned meals: %+v", status.AssignedMeals)
 	}
 }

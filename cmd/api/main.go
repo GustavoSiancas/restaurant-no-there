@@ -3,6 +3,7 @@ package main
 import (
 	rootassets "backend"
 	"backend/internal/config"
+	coreclock "backend/internal/core/clock"
 	coredb "backend/internal/core/database"
 	authapp "backend/internal/modules/auth/application"
 	authhttp "backend/internal/modules/auth/delivery/http"
@@ -51,7 +52,8 @@ func main() {
 	}
 	usersRepo := userpg.New(db)
 	tokensRepo := tokenpg.New(db)
-	clock := time.Now
+	serverClock := coreclock.NewAdjustable()
+	clock := serverClock.Now
 	jwtService := jwtinfra.New(cfg.JWTSecret)
 	usersHandler := userhttp.New(userapp.NewService(usersRepo))
 	authHandler := authhttp.New(authapp.NewService(usersRepo, tokensRepo, jwtService, cfg.AccessTTL, cfg.WorkerAccessTTL, cfg.RefreshTTL))
@@ -87,6 +89,44 @@ func main() {
 	v1.POST("/auth/login/password", authLimit, authHandler.LoginPassword)
 	v1.POST("/auth/login/dni", authLimit, authHandler.LoginDNI)
 	v1.POST("/auth/refresh", authLimit, authHandler.Refresh)
+	v1.GET("/test/server-time", func(c *gin.Context) {
+		now := serverClock.Now().In(peruLocation())
+		c.JSON(http.StatusOK, gin.H{
+			"datetime": now.Format(time.RFC3339),
+			"date":     now.Format("2006-01-02"),
+			"time":     now.Format("15:04:05"),
+			"timezone": "America/Lima",
+			"adjusted": serverClock.Adjusted(),
+		})
+	})
+	v1.PUT("/test/server-time", func(c *gin.Context) {
+		var request struct {
+			Datetime string `json:"datetime"`
+			Reset    bool   `json:"reset"`
+		}
+		if c.ShouldBindJSON(&request) != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+			return
+		}
+		if request.Reset {
+			serverClock.Reset()
+		} else {
+			value, parseErr := time.Parse(time.RFC3339, request.Datetime)
+			if parseErr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "datetime must use RFC3339, for example 2026-09-02T06:30:00-05:00"})
+				return
+			}
+			serverClock.Set(value)
+		}
+		now := serverClock.Now().In(peruLocation())
+		c.JSON(http.StatusOK, gin.H{
+			"datetime": now.Format(time.RFC3339),
+			"date":     now.Format("2006-01-02"),
+			"time":     now.Format("15:04:05"),
+			"timezone": "America/Lima",
+			"adjusted": serverClock.Adjusted(),
+		})
+	})
 	protected := v1.Group("")
 	protected.Use(authhttp.RequireAuth(jwtService))
 	protected.POST("/users/register/management", authhttp.RequireRoles("ADMIN"), usersHandler.RegisterManagement)
@@ -127,6 +167,14 @@ func main() {
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = server.Shutdown(shutdown)
+}
+
+func peruLocation() *time.Location {
+	location, err := time.LoadLocation("America/Lima")
+	if err != nil {
+		return time.FixedZone("America/Lima", -5*60*60)
+	}
+	return location
 }
 
 func runMealScheduler(ctx context.Context, service *mealapp.Service, interval time.Duration, lookbackDays int) {

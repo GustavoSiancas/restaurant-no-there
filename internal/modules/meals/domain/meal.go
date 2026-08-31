@@ -118,12 +118,19 @@ type CurrentMeal struct {
 	ClaimID        *string  `json:"claim_id,omitempty"`
 }
 
+type AssignedMeal struct {
+	MealType    MealType `json:"meal_type"`
+	DisplayName string   `json:"display_name"`
+	ServiceDate string   `json:"service_date"`
+}
+
 type WorkerStatus struct {
-	PeruTime       time.Time     `json:"peru_time"`
-	OnShift        bool          `json:"on_shift"`
-	CurrentShift   *CurrentShift `json:"current_shift,omitempty"`
-	MealWindowOpen bool          `json:"meal_window_open"`
-	CurrentMeal    *CurrentMeal  `json:"current_meal,omitempty"`
+	PeruTime       time.Time      `json:"peru_time"`
+	OnShift        bool           `json:"on_shift"`
+	CurrentShift   *CurrentShift  `json:"current_shift,omitempty"`
+	AssignedMeals  []AssignedMeal `json:"assigned_meals"`
+	MealWindowOpen bool           `json:"meal_window_open"`
+	CurrentMeal    *CurrentMeal   `json:"current_meal,omitempty"`
 }
 
 type WorkerTicketIdentity struct {

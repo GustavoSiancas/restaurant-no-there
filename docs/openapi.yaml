@@ -14,7 +14,38 @@ tags:
   - name: Users
   - name: Workforce
   - name: Meals
+  - name: Testing
 paths:
+  /test/server-time:
+    get:
+      tags: [Testing]
+      summary: Consultar la fecha y hora efectiva del servidor
+      description: Endpoint público y temporal para pruebas. Devuelve la hora usada por los servicios de Workforce y Meals.
+      responses:
+        '200':
+          description: Fecha y hora efectiva en America/Lima
+          content:
+            application/json:
+              example: {datetime: '2026-09-02T06:30:00-05:00', date: '2026-09-02', time: '06:30:00', timezone: America/Lima, adjusted: true}
+    put:
+      tags: [Testing]
+      summary: Modificar o restablecer la fecha y hora efectiva del servidor
+      description: Endpoint público y temporal para pruebas. La hora fijada continúa avanzando normalmente. Enviar reset=true para volver a la hora real.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                datetime: {type: string, format: date-time, example: '2026-09-02T06:30:00-05:00'}
+                reset: {type: boolean, default: false}
+            examples:
+              set: {value: {datetime: '2026-09-02T06:30:00-05:00'}}
+              reset: {value: {reset: true}}
+      responses:
+        '200': {description: Fecha y hora efectiva actualizada}
+        '400': {$ref: '#/components/responses/BadRequest'}
   /auth/bootstrap/admin:
     post:
       tags: [Auth]
@@ -466,6 +497,15 @@ components:
             assignment_id: {type: string, format: uuid}
             shift_type: {type: string, enum: [DIA, NOCHE]}
             work_date: {type: string, format: date}
+        assigned_meals:
+          type: array
+          description: Comidas correspondientes al turno actual con su fecha efectiva de servicio.
+          items:
+            type: object
+            properties:
+              meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+              display_name: {type: string, enum: [Desayuno, Almuerzo, Cena]}
+              service_date: {type: string, format: date}
         meal_window_open: {type: boolean}
         current_meal:
           type: object
