@@ -79,7 +79,7 @@ func (f *fakeRepository) ListWorkerAssignments(context.Context, string, string, 
 func (f *fakeRepository) ListWorkerAssignmentsRange(context.Context, string, time.Time, time.Time) ([]domain.WorkerShiftAssignment, error) {
 	return nil, nil
 }
-func (f *fakeRepository) ListShiftPreview(context.Context, time.Time, []string) ([]domain.ShiftPreviewRow, error) {
+func (f *fakeRepository) ListShiftPreview(context.Context, time.Time) ([]domain.ShiftPreviewRow, error) {
 	return f.preview, nil
 }
 func (f *fakeRepository) ListActiveMealRules(context.Context) ([]domain.PreviewRule, error) {
@@ -90,7 +90,7 @@ func TestShiftPreviewAssignsMealsByShift(t *testing.T) {
 	date := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	repo := &fakeRepository{preview: []domain.ShiftPreviewRow{{AssignmentID: "day", ShiftType: domain.ShiftDay, WorkDate: date}, {AssignmentID: "night", ShiftType: domain.ShiftNight, WorkDate: date}}, rules: []domain.PreviewRule{{MealType: "DESAYUNO", Start: "06:00:00", End: "10:00:00"}, {MealType: "TARDE", Start: "12:00:00", End: "15:00:00"}, {MealType: "NOCHE", Start: "18:00:00", End: "22:00:00"}}}
 	service := NewService(repo, fakeUsers{})
-	report, err := service.ShiftPreview(context.Background(), date, nil, nil, 1, 20, true)
+	report, err := service.ShiftPreview(context.Background(), date, nil, 1, 20, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

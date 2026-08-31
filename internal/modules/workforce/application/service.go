@@ -251,10 +251,6 @@ func (s *Service) ShiftPreview(
 	// 3. TRAER LOS TURNOS DE LA FECHA
 	// Queremos DIA + NOCHE.
 	//
-	// OJO:
-	// Todavía se manda nil porque tu repository sigue recibiendo
-	// el tercer parámetro.
-	//
 	// Si acá rows=0, el problema está en el repository.
 	// ============================================================
 	rows, err := s.repo.ListShiftPreview(ctx, date)
