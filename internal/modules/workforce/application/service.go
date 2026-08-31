@@ -100,7 +100,7 @@ func (s *Service) UpdateAssignment(ctx context.Context, id string, shiftType dom
 	date = s.peruDate(date)
 
 	existing, err := s.repo.FindAssignmentByID(ctx, id)
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -130,16 +130,22 @@ func (s *Service) UpdateAssignment(ctx context.Context, id string, shiftType dom
 
 func (s *Service) DeleteAssignment(ctx context.Context, id string) error {
 	today := s.peruToday()
+
 	assignment, err := s.repo.FindAssignmentByID(ctx, id)
 	if err != nil {
 		return err
 	}
-	if !s.peruDate(assignment.WorkDate).After(today) {
-		return fmt.Errorf("%w: shifts cannot be deleted on or after their work date", core.ErrLocked)
+
+	assignmentDate := s.peruDate(assignment.WorkDate)
+
+	if !CanManageAssignmentForDate(assignmentDate, today) {
+		return ErrAssignmentOutsideAllowedWeek
 	}
+
 	if err = s.repo.DeleteAssignment(ctx, id, today); err != nil {
 		return err
 	}
+
 	return nil
 }
 
