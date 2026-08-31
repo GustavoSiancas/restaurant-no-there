@@ -35,6 +35,8 @@ func (f fakeUsers) RoleExists(context.Context, userdomain.Role) (bool, error) { 
 type fakeRepository struct {
 	existing *domain.WorkerShiftAssignment
 	created  bool
+	preview  []domain.ShiftPreviewRow
+	rules    []domain.PreviewRule
 }
 
 func (f *fakeRepository) CreateWorker(context.Context, *userdomain.User, *domain.WorkerInformation, string) error {
@@ -76,6 +78,28 @@ func (f *fakeRepository) ListWorkerAssignments(context.Context, string, string, 
 }
 func (f *fakeRepository) ListWorkerAssignmentsRange(context.Context, string, time.Time, time.Time) ([]domain.WorkerShiftAssignment, error) {
 	return nil, nil
+}
+func (f *fakeRepository) ListShiftPreview(context.Context, time.Time, []string) ([]domain.ShiftPreviewRow, error) {
+	return f.preview, nil
+}
+func (f *fakeRepository) ListActiveMealRules(context.Context) ([]domain.PreviewRule, error) {
+	return f.rules, nil
+}
+
+func TestShiftPreviewAssignsMealsByShift(t *testing.T) {
+	date := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	repo := &fakeRepository{preview: []domain.ShiftPreviewRow{{AssignmentID: "day", ShiftType: domain.ShiftDay, WorkDate: date}, {AssignmentID: "night", ShiftType: domain.ShiftNight, WorkDate: date}}, rules: []domain.PreviewRule{{MealType: "DESAYUNO", Start: "06:00:00", End: "10:00:00"}, {MealType: "TARDE", Start: "12:00:00", End: "15:00:00"}, {MealType: "NOCHE", Start: "18:00:00", End: "22:00:00"}}}
+	service := NewService(repo, fakeUsers{})
+	report, err := service.ShiftPreview(context.Background(), date, nil, nil, 1, 20, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Total != 2 || report.Summary.ByMeal["DESAYUNO"] != 2 || report.Summary.ByMeal["TARDE"] != 1 || report.Summary.ByMeal["NOCHE"] != 1 {
+		t.Fatalf("unexpected summary: %+v", report.Summary)
+	}
+	if got := report.Data[1].AssignedMeals[0].ServiceDate; !got.Equal(date.AddDate(0, 0, 1)) {
+		t.Fatalf("night breakfast date=%v", got)
+	}
 }
 
 func TestAssignWorkerRejectsSecondShiftOnSameDate(t *testing.T) {

@@ -16,5 +16,6 @@ type RefreshTokenRepository interface {
 	Create(ctx context.Context, token *domain.RefreshToken) error
 	FindValidByHash(ctx context.Context, hash string, now time.Time) (*domain.RefreshToken, error)
 	Revoke(ctx context.Context, id string, revokedAt time.Time) error
+	Rotate(ctx context.Context, oldID string, replacement *domain.RefreshToken, rotatedAt time.Time) error
 	RevokeAllByUser(ctx context.Context, userID string, revokedAt time.Time) error
 }

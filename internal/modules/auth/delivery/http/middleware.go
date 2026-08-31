@@ -25,8 +25,8 @@ func RequireAuth(jwt *jwtinfra.Service) gin.HandlerFunc {
 	}
 }
 
-// RequireWebSocketAuth accepts the normal Bearer header and, for browser
-// WebSocket clients that cannot set it, an access_token query parameter.
+// RequireWebSocketAuth accepts the normal Bearer header. Browser clients can
+// send protocols ["bearer", "JWT"] so the credential travels in a header.
 func RequireWebSocketAuth(jwt *jwtinfra.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := ""
@@ -34,7 +34,10 @@ func RequireWebSocketAuth(jwt *jwtinfra.Service) gin.HandlerFunc {
 		if strings.HasPrefix(header, "Bearer ") {
 			token = strings.TrimPrefix(header, "Bearer ")
 		} else {
-			token = c.Query("access_token")
+			protocols := strings.Split(c.GetHeader("Sec-WebSocket-Protocol"), ",")
+			if len(protocols) >= 2 && strings.TrimSpace(protocols[0]) == "bearer" {
+				token = strings.TrimSpace(protocols[1])
+			}
 		}
 		if token == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "access token required"})

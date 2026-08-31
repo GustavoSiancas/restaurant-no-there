@@ -54,7 +54,7 @@ func (r *Repository) FindMyUser(ctx context.Context, id string) (*domain.MyUser,
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.Query(ctx, `SELECT type,identifier FROM user_credentials WHERE user_id=$1 AND active=TRUE ORDER BY type`, id)
+	rows, err := r.db.Query(ctx, `SELECT type,CASE WHEN type='DNI' THEN REPEAT('*',GREATEST(LENGTH(identifier)-4,0)) || RIGHT(identifier,4) ELSE identifier END FROM user_credentials WHERE user_id=$1 AND active=TRUE ORDER BY type`, id)
 	if err != nil {
 		return nil, err
 	}

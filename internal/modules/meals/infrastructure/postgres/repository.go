@@ -140,9 +140,26 @@ func (r *Repository) FindOrderByID(ctx context.Context, id string) (*domain.Meal
 
 func (r *Repository) ValidateOrder(ctx context.Context, id, validatedBy string, validatedAt time.Time) (*domain.MealOrder, error) {
 	return scanOrder(r.db.QueryRow(ctx, `WITH updated AS (
-		UPDATE meal_claims SET status='VALIDATED',validated_at=$2,validated_by=$3,updated_at=NOW()
-		WHERE id=$1 AND status='PENDING' RETURNING *
+		UPDATE meal_claims c SET status='VALIDATED',validated_at=$2,validated_by=$3,updated_at=NOW()
+		FROM meal_service_rules r
+		WHERE c.id=$1 AND c.status='REQUESTED' AND r.meal_type=c.meal_type
+		  AND $2 >= ((c.service_date + r.claim_start) AT TIME ZONE r.timezone)
+		  AND $2 < ((c.service_date + r.claim_end) AT TIME ZONE r.timezone)
+		RETURNING c.*
 	) SELECT `+orderColumns+` FROM updated c `+orderJoins, id, validatedAt, validatedBy))
+}
+
+func (r *Repository) EarliestPendingServiceDate(ctx context.Context) (*time.Time, error) {
+	var date *time.Time
+	err := r.db.QueryRow(ctx, `WITH eligible AS (
+		SELECT worker_id,work_date AS service_date,'DESAYUNO'::meal_type meal_type FROM worker_shift_assignments WHERE shift_type='DIA'
+		UNION SELECT worker_id,work_date,'TARDE'::meal_type FROM worker_shift_assignments WHERE shift_type='DIA'
+		UNION SELECT worker_id,work_date,'NOCHE'::meal_type FROM worker_shift_assignments WHERE shift_type='NOCHE'
+		UNION SELECT worker_id,work_date+1,'DESAYUNO'::meal_type FROM worker_shift_assignments WHERE shift_type='NOCHE'
+	) SELECT MIN(e.service_date) FROM eligible e
+	LEFT JOIN meal_claims c ON c.worker_id=e.worker_id AND c.meal_type=e.meal_type AND c.service_date=e.service_date
+	WHERE c.id IS NULL OR c.status='REQUESTED'`).Scan(&date)
+	return date, err
 }
 
 func (r *Repository) CloseMealWindow(ctx context.Context, mealType domain.MealType, serviceDate, closedAt time.Time) (domain.MealWindowClosure, error) {
@@ -192,9 +209,9 @@ func (r *Repository) DetailedReportSummary(ctx context.Context, filters domain.R
 	var summary domain.DetailedReportSummary
 	err := r.db.QueryRow(ctx, `SELECT COUNT(*),
 		COUNT(*) FILTER(WHERE c.status='VALIDATED'),
-		COUNT(*) FILTER(WHERE c.status='PENDING'),
-		COUNT(*) FILTER(WHERE c.status='NOT_CLAIMED'),
-		COUNT(*) FILTER(WHERE c.status IN ('PENDING','NOT_CLAIMED'))`+detailedReportWhere,
+		COUNT(*) FILTER(WHERE c.status='REQUESTED_BUT_NOT_VALIDATED'),
+		COUNT(*) FILTER(WHERE c.status='NOT_CONSUMED'),
+		COUNT(*) FILTER(WHERE c.status IN ('REQUESTED_BUT_NOT_VALIDATED','NOT_CONSUMED'))`+detailedReportWhere,
 		filters.From, filters.To, filters.MealType, filters.ShiftType).
 		Scan(&summary.TotalEligible, &summary.Consumed, &summary.RequestedNotValidated, &summary.NotClaimed, &summary.DidNotConsume)
 	return summary, err
@@ -236,8 +253,8 @@ func (r *Repository) Report(ctx context.Context, from, to time.Time) ([]domain.R
 		SELECT worker_id, work_date + 1, 'DESAYUNO'::meal_type FROM worker_shift_assignments WHERE shift_type='NOCHE'
 	), types(meal_type) AS (VALUES ('DESAYUNO'::meal_type),('TARDE'::meal_type),('NOCHE'::meal_type))
 	SELECT t.meal_type, COUNT(e.worker_id),
-		COUNT(c.id) FILTER(WHERE c.status IN ('PENDING','VALIDATED')),
-		COUNT(e.worker_id)-COUNT(c.id) FILTER(WHERE c.status IN ('PENDING','VALIDATED'))
+		COUNT(c.id) FILTER(WHERE c.status IN ('REQUESTED','VALIDATED','REQUESTED_BUT_NOT_VALIDATED')),
+		COUNT(e.worker_id)-COUNT(c.id) FILTER(WHERE c.status IN ('REQUESTED','VALIDATED','REQUESTED_BUT_NOT_VALIDATED'))
 	FROM types t LEFT JOIN eligible e ON e.meal_type=t.meal_type AND e.service_date BETWEEN $1 AND $2
 	LEFT JOIN meal_claims c ON c.worker_id=e.worker_id AND c.meal_type=e.meal_type AND c.service_date=e.service_date
 	GROUP BY t.meal_type ORDER BY t.meal_type`, from, to)

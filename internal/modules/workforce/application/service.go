@@ -178,3 +178,80 @@ func (s *Service) ListWorkerAssignmentsRange(ctx context.Context, workerID strin
 	}
 	return s.repo.ListWorkerAssignmentsRange(ctx, workerID, s.peruDate(from), s.peruDate(to))
 }
+
+func (s *Service) ShiftPreview(ctx context.Context, date time.Time, mealTypes, shiftTypes []string, page, pageSize int, paginate bool) (*domain.ShiftPreview, error) {
+	if date.IsZero() {
+		date = s.peruToday()
+	} else {
+		date = s.peruDate(date)
+	}
+	mealFilter := make(map[string]bool)
+	for _, value := range mealTypes {
+		if value != "DESAYUNO" && value != "TARDE" && value != "NOCHE" {
+			return nil, fmt.Errorf("invalid meal_type")
+		}
+		mealFilter[value] = true
+	}
+	for _, value := range shiftTypes {
+		if value != "DIA" && value != "NOCHE" {
+			return nil, fmt.Errorf("invalid shift_type")
+		}
+	}
+	rows, err := s.repo.ListShiftPreview(ctx, date, shiftTypes)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := s.repo.ListActiveMealRules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	summary := domain.ShiftPreviewSummary{ByShift: map[string]int{"DIA": 0, "NOCHE": 0}, ByMeal: map[string]int{"DESAYUNO": 0, "TARDE": 0, "NOCHE": 0}}
+	filtered := make([]domain.ShiftPreviewRow, 0, len(rows))
+	for _, row := range rows {
+		for _, rule := range rules {
+			eligible := (row.ShiftType == domain.ShiftDay && (rule.MealType == "DESAYUNO" || rule.MealType == "TARDE")) || (row.ShiftType == domain.ShiftNight && (rule.MealType == "NOCHE" || rule.MealType == "DESAYUNO"))
+			if !eligible || (len(mealFilter) > 0 && !mealFilter[rule.MealType]) {
+				continue
+			}
+			serviceDate := row.WorkDate
+			if row.ShiftType == domain.ShiftNight && rule.MealType == "DESAYUNO" {
+				serviceDate = serviceDate.AddDate(0, 0, 1)
+			}
+			name := map[string]string{"DESAYUNO": "DESAYUNO", "TARDE": "ALMUERZO", "NOCHE": "CENA"}[rule.MealType]
+			row.AssignedMeals = append(row.AssignedMeals, domain.PreviewMeal{MealType: rule.MealType, DisplayName: name, ServiceDate: serviceDate, Start: strings.TrimSuffix(rule.Start, ":00"), End: strings.TrimSuffix(rule.End, ":00")})
+		}
+		if len(mealFilter) > 0 && len(row.AssignedMeals) == 0 {
+			continue
+		}
+		summary.TotalAssigned++
+		summary.ByShift[string(row.ShiftType)]++
+		for _, meal := range row.AssignedMeals {
+			summary.ByMeal[meal.MealType]++
+		}
+		filtered = append(filtered, row)
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	total := len(filtered)
+	totalPages := (total + pageSize - 1) / pageSize
+	data := filtered
+	if paginate {
+		start := (page - 1) * pageSize
+		if start > total {
+			start = total
+		}
+		end := start + pageSize
+		if end > total {
+			end = total
+		}
+		data = filtered[start:end]
+	}
+	return &domain.ShiftPreview{Date: date, Summary: summary, Data: data, Page: page, PageSize: pageSize, Total: total, TotalPages: totalPages}, nil
+}

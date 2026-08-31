@@ -1,9 +1,10 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TYPE user_role AS ENUM ('ADMIN', 'OWNER', 'RRHH', 'WORKER');
+CREATE TYPE user_role AS ENUM ('ADMIN', 'OWNER', 'RRHH', 'WORKER', 'COLLABORATOR');
 CREATE TYPE credential_type AS ENUM ('PASSWORD', 'DNI', 'FACE_SCAN');
 CREATE TYPE shift_type AS ENUM ('DIA', 'NOCHE');
 CREATE TYPE meal_type AS ENUM ('DESAYUNO', 'TARDE', 'NOCHE');
+CREATE TYPE meal_claim_status AS ENUM ('REQUESTED', 'VALIDATED', 'NOT_CONSUMED', 'REQUESTED_BUT_NOT_VALIDATED');
 
 -- Cuenta del sistema. No contiene información personal ni credenciales.
 CREATE TABLE users (
@@ -16,6 +17,7 @@ CREATE TABLE users (
 );
 
 CREATE INDEX users_role_idx ON users (role);
+CREATE UNIQUE INDEX users_single_admin_idx ON users (role) WHERE role = 'ADMIN';
 
 -- Datos personales separados de la cuenta.
 CREATE TABLE user_profiles (
@@ -126,21 +128,23 @@ CREATE TABLE meal_claims (
     shift_assignment_id UUID NOT NULL REFERENCES worker_shift_assignments(id) ON DELETE RESTRICT,
     meal_type meal_type NOT NULL REFERENCES meal_service_rules(meal_type) ON DELETE RESTRICT,
     service_date DATE NOT NULL,
-    claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    consumed BOOLEAN NOT NULL DEFAULT FALSE,
-    consumed_at TIMESTAMPTZ,
-    consumption_registered_by UUID REFERENCES users(id) ON DELETE RESTRICT,
+    claimed_at TIMESTAMPTZ,
+    status meal_claim_status NOT NULL DEFAULT 'REQUESTED',
+    validated_at TIMESTAMPTZ,
+    validated_by UUID REFERENCES users(id) ON DELETE RESTRICT,
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT meal_claims_consumption_consistent CHECK (
-        (consumed = FALSE AND consumed_at IS NULL AND consumption_registered_by IS NULL)
-        OR (consumed = TRUE AND consumed_at IS NOT NULL AND consumption_registered_by IS NOT NULL)
+    CONSTRAINT meal_claims_status_consistent CHECK (
+        (status = 'REQUESTED' AND claimed_at IS NOT NULL AND validated_at IS NULL AND validated_by IS NULL)
+        OR (status = 'VALIDATED' AND claimed_at IS NOT NULL AND validated_at IS NOT NULL AND validated_by IS NOT NULL)
+        OR (status = 'NOT_CONSUMED' AND claimed_at IS NULL AND validated_at IS NULL AND validated_by IS NULL)
+        OR (status = 'REQUESTED_BUT_NOT_VALIDATED' AND claimed_at IS NOT NULL AND validated_at IS NULL AND validated_by IS NULL)
     ),
     CONSTRAINT meal_claims_once_per_day UNIQUE (worker_id, meal_type, service_date)
 );
 
 CREATE INDEX meal_claims_service_date_idx ON meal_claims (service_date);
 CREATE INDEX meal_claims_worker_date_idx ON meal_claims (worker_id, service_date);
-CREATE INDEX meal_claims_report_idx ON meal_claims (service_date, meal_type, consumed);
-
+CREATE INDEX meal_claims_report_idx ON meal_claims (service_date, meal_type);
+CREATE INDEX meal_claims_status_created_idx ON meal_claims (status, created_at DESC);

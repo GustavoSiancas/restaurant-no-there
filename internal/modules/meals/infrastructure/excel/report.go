@@ -123,9 +123,11 @@ func displayStatus(value domain.ClaimStatus) string {
 	switch value {
 	case domain.ClaimValidated:
 		return "CONSUMIÓ"
-	case domain.ClaimPending:
-		return "PIDIÓ - NO VALIDADO"
+	case domain.ClaimRequested:
+		return "SOLICITADO"
+	case domain.ClaimRequestedNotValidated:
+		return "SOLICITADO - NO VALIDADO"
 	default:
-		return "NO RECLAMÓ"
+		return "NO CONSUMIÓ"
 	}
 }

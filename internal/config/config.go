@@ -17,7 +17,6 @@ type Config struct {
 	WorkerAccessTTL       time.Duration
 	RefreshTTL            time.Duration
 	AllowedOrigins        []string
-	FixedTime             *time.Time
 	MealSchedulerInterval time.Duration
 	MealSchedulerLookback int
 }
@@ -47,13 +46,6 @@ func Load() (Config, error) {
 	}
 	if _, err = fmt.Sscan(env("MEAL_SCHEDULER_LOOKBACK_DAYS", "30"), &c.MealSchedulerLookback); err != nil || c.MealSchedulerLookback < 0 {
 		return c, fmt.Errorf("MEAL_SCHEDULER_LOOKBACK_DAYS must be zero or a positive integer")
-	}
-	if value := strings.TrimSpace(os.Getenv("APP_FIXED_TIME")); value != "" {
-		fixedTime, err := time.Parse(time.RFC3339, value)
-		if err != nil {
-			return c, fmt.Errorf("APP_FIXED_TIME must use RFC3339, for example 2026-08-31T08:00:00-05:00")
-		}
-		c.FixedTime = &fixedTime
 	}
 	return c, nil
 }

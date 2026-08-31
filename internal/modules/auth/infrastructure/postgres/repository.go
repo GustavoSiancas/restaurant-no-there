@@ -25,8 +25,36 @@ func (r *Repository) FindValidByHash(ctx context.Context, hash string, now time.
 	return &t, err
 }
 func (r *Repository) Revoke(ctx context.Context, id string, at time.Time) error {
-	_, err := r.db.Exec(ctx, `UPDATE refresh_tokens SET revoked_at=$2,updated_at=NOW() WHERE id=$1`, id, at)
+	result, err := r.db.Exec(ctx, `UPDATE refresh_tokens SET revoked_at=$2,updated_at=NOW() WHERE id=$1 AND revoked_at IS NULL`, id, at)
+	if err == nil && result.RowsAffected() == 0 {
+		return core.ErrUnauthorized
+	}
 	return err
+}
+func (r *Repository) Rotate(ctx context.Context, oldID string, replacement *domain.RefreshToken, at time.Time) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var userID string
+	err = tx.QueryRow(ctx, `UPDATE refresh_tokens SET revoked_at=$2,updated_at=NOW()
+		WHERE id=$1 AND revoked_at IS NULL AND expires_at>$2 RETURNING user_id`, oldID, at).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return core.ErrUnauthorized
+	}
+	if err != nil {
+		return err
+	}
+	if userID != replacement.UserID {
+		return core.ErrUnauthorized
+	}
+	err = tx.QueryRow(ctx, `INSERT INTO refresh_tokens (user_id,token_hash,expires_at,user_agent,ip_address)
+		VALUES ($1,$2,$3,$4,NULLIF($5,'')::inet) RETURNING id,created_at,updated_at`, replacement.UserID, replacement.TokenHash, replacement.ExpiresAt, replacement.UserAgent, replacement.IPAddress).Scan(&replacement.ID, &replacement.CreatedAt, &replacement.UpdatedAt)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 func (r *Repository) RevokeAllByUser(ctx context.Context, userID string, at time.Time) error {
 	_, err := r.db.Exec(ctx, `UPDATE refresh_tokens SET revoked_at=$2,updated_at=NOW() WHERE user_id=$1 AND revoked_at IS NULL`, userID, at)

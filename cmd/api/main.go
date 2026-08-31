@@ -1,6 +1,7 @@
 package main
 
 import (
+	rootassets "backend"
 	"backend/internal/config"
 	coredb "backend/internal/core/database"
 	authapp "backend/internal/modules/auth/application"
@@ -45,17 +46,12 @@ func main() {
 	if err = db.Ping(ctx); err != nil {
 		log.Fatal(err)
 	}
-	if err = coredb.RunMigrations(ctx, db, "migrations"); err != nil {
+	if err = coredb.RunMigrations(ctx, db, rootassets.Assets, "migrations"); err != nil {
 		log.Fatal(err)
 	}
 	usersRepo := userpg.New(db)
 	tokensRepo := tokenpg.New(db)
 	clock := time.Now
-	if cfg.FixedTime != nil {
-		fixedTime := *cfg.FixedTime
-		clock = func() time.Time { return fixedTime }
-		log.Printf("APP_FIXED_TIME enabled: %s", fixedTime.Format(time.RFC3339))
-	}
 	jwtService := jwtinfra.New(cfg.JWTSecret)
 	usersHandler := userhttp.New(userapp.NewService(usersRepo))
 	authHandler := authhttp.New(authapp.NewService(usersRepo, tokensRepo, jwtService, cfg.AccessTTL, cfg.WorkerAccessTTL, cfg.RefreshTTL))
@@ -65,6 +61,8 @@ func main() {
 	mealHandler := mealhttp.New(mealService, mealBroker)
 	go runMealScheduler(ctx, mealService, cfg.MealSchedulerInterval, cfg.MealSchedulerLookback)
 	r := gin.Default()
+	_ = r.SetTrustedProxies(nil)
+	r.Use(authhttp.LimitRequestBody(1 << 20))
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.AllowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
@@ -74,13 +72,20 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 	r.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
-	r.StaticFile("/openapi.yaml", "./docs/openapi.yaml")
+	r.GET("/openapi.yaml", func(c *gin.Context) {
+		content, readErr := rootassets.Assets.ReadFile("docs/openapi.yaml")
+		if readErr != nil {
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		c.Data(http.StatusOK, "application/yaml; charset=utf-8", content)
+	})
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/openapi.yaml")))
 	v1 := r.Group("/api/v1")
-	v1.POST("/auth/bootstrap/admin", usersHandler.BootstrapAdmin)
-	v1.POST("/auth/login/password", authHandler.LoginPassword)
-	v1.POST("/auth/login/dni", authHandler.LoginDNI)
-	v1.POST("/auth/refresh", authHandler.Refresh)
+	authLimit := authhttp.RateLimit(10, time.Minute)
+	v1.POST("/auth/login/password", authLimit, authHandler.LoginPassword)
+	v1.POST("/auth/login/dni", authLimit, authHandler.LoginDNI)
+	v1.POST("/auth/refresh", authLimit, authHandler.Refresh)
 	protected := v1.Group("")
 	protected.Use(authhttp.RequireAuth(jwtService))
 	protected.POST("/users/register/management", authhttp.RequireRoles("ADMIN"), usersHandler.RegisterManagement)
@@ -89,8 +94,6 @@ func main() {
 	protected.POST("/worker-shift-assignments", authhttp.RequireRoles("ADMIN", "RRHH"), workforceHandler.AssignWorker)
 	protected.PUT("/worker-shift-assignments/:id", authhttp.RequireRoles("ADMIN", "RRHH"), workforceHandler.UpdateAssignment)
 	protected.DELETE("/worker-shift-assignments/:id", authhttp.RequireRoles("ADMIN", "RRHH"), workforceHandler.DeleteAssignment)
-	protected.GET("/worker-shift-assignments", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.ListAssignments)
-	protected.GET("/workers/:id/shifts", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.ListWorkerAssignments)
 	protected.GET("/workers/:id/shifts/range", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.ListWorkerAssignmentsRange)
 	protected.GET("/workers/my/shifts/range", authhttp.RequireRoles("WORKER"), workforceHandler.ListMyAssignmentsRange)
 	protected.GET("/meal-claims/my/preview", authhttp.RequireRoles("WORKER"), mealHandler.ClaimPreview)
@@ -100,17 +103,16 @@ func main() {
 	protected.PATCH("/meal-orders/:id/validate", authhttp.RequireRoles("COLLABORATOR"), mealHandler.ValidateOrder)
 	protected.GET("/meal-reports/daily", authhttp.RequireRoles("OWNER", "RRHH"), mealHandler.DetailedReport)
 	protected.GET("/meal-reports/export.xlsx", authhttp.RequireRoles("OWNER", "RRHH"), mealHandler.ExportDetailedReport)
+	protected.GET("/workforce/shift-preview", authhttp.RequireRoles("OWNER", "RRHH"), workforceHandler.ShiftPreview)
+	protected.GET("/workforce/shift-preview/export.xlsx", authhttp.RequireRoles("OWNER", "RRHH"), workforceHandler.ExportShiftPreview)
 	protected.GET("/meal-schedules", mealHandler.ListSchedules)
 	protected.GET("/workers/my/status", authhttp.RequireRoles("WORKER"), mealHandler.WorkerStatus)
-	protected.GET("/meal-claims/report", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), mealHandler.Report)
 	protected.GET("/users/my", usersHandler.My)
 	protected.GET("/users/workers", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), usersHandler.Workers)
 	protected.GET("/users/management", authhttp.RequireRoles("ADMIN"), usersHandler.Management)
 	protected.GET("/users/collaborators", authhttp.RequireRoles("OWNER"), usersHandler.Collaborators)
-	protected.GET("/users", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), usersHandler.List)
-	protected.GET("/users/:id", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), usersHandler.Get)
 	v1.GET("/ws/meal-orders", authhttp.RequireWebSocketAuth(jwtService), authhttp.RequireRoles("COLLABORATOR", "OWNER"), mealHandler.OrdersWebSocket)
-	server := &http.Server{Addr: ":" + cfg.Port, Handler: r, ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Addr: ":" + cfg.Port, Handler: r, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
 		log.Printf("API http://localhost:%s | Swagger http://localhost:%s/swagger/index.html", cfg.Port, cfg.Port)
 		if e := server.ListenAndServe(); e != nil && e != http.ErrServerClosed {
@@ -136,7 +138,7 @@ func runMealScheduler(ctx context.Context, service *mealapp.Service, interval ti
 			return
 		}
 		if created > 0 {
-			log.Printf("meal scheduler created %d NOT_CLAIMED records", created)
+			log.Printf("meal scheduler finalized %d meal records", created)
 		}
 	}
 	run()

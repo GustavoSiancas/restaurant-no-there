@@ -56,9 +56,12 @@ func (f *fakeMealsRepository) FindOrderByID(context.Context, string) (*domain.Me
 func (f *fakeMealsRepository) ValidateOrder(context.Context, string, string, time.Time) (*domain.MealOrder, error) {
 	return nil, core.ErrNotFound
 }
-func (f *fakeMealsRepository) CreateNotClaimed(_ context.Context, mealType domain.MealType, _ time.Time, _ time.Time) (int64, error) {
+func (f *fakeMealsRepository) EarliestPendingServiceDate(context.Context) (*time.Time, error) {
+	return nil, nil
+}
+func (f *fakeMealsRepository) CloseMealWindow(_ context.Context, mealType domain.MealType, _ time.Time, _ time.Time) (domain.MealWindowClosure, error) {
 	f.closed = append(f.closed, mealType)
-	return 1, nil
+	return domain.MealWindowClosure{NotConsumed: 1}, nil
 }
 func (f *fakeMealsRepository) DetailedReportSummary(context.Context, domain.ReportFilters) (domain.DetailedReportSummary, error) {
 	return domain.DetailedReportSummary{}, nil
@@ -110,6 +113,30 @@ func TestSchedulerClosesOnlyExpiredWindows(t *testing.T) {
 	}
 	if created != 1 || len(repo.closed) != 1 || repo.closed[0] != domain.Breakfast {
 		t.Fatalf("expected only breakfast to close, got %v", repo.closed)
+	}
+}
+
+func TestSchedulerSkipsInactiveRules(t *testing.T) {
+	repo := &fakeMealsRepository{rules: []domain.ServiceRule{{MealType: domain.Breakfast, ClaimEnd: "10:00:00", Active: false}}}
+	service := NewService(repo, func() time.Time { return time.Date(2026, 8, 31, 13, 0, 0, 0, time.FixedZone("UTC-5", -5*60*60)) })
+	created, err := service.CloseExpiredMealWindows(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if created != 0 || len(repo.closed) != 0 {
+		t.Fatalf("inactive rule was closed: %v", repo.closed)
+	}
+}
+
+func TestWorkerStatusSkipsInactiveRules(t *testing.T) {
+	repo := &fakeMealsRepository{eligible: true, rules: []domain.ServiceRule{{MealType: domain.Breakfast, ClaimStart: "06:00:00", ClaimEnd: "10:00:00", Timezone: "America/Lima", Active: false}}}
+	service := NewService(repo, func() time.Time { return time.Date(2026, 9, 2, 7, 0, 0, 0, time.FixedZone("UTC-5", -5*60*60)) })
+	status, err := service.WorkerStatus(context.Background(), "worker")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status.MealWindowOpen || status.CurrentMeal != nil {
+		t.Fatalf("inactive meal was exposed: %+v", status)
 	}
 }
 

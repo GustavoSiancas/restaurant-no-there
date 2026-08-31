@@ -3,8 +3,8 @@ package database
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io/fs"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,16 +13,25 @@ import (
 )
 
 // RunMigrations applies pending *.up.sql files and records their numeric version.
-func RunMigrations(ctx context.Context, db *pgxpool.Pool, directory string) error {
-	if _, err := db.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+func RunMigrations(ctx context.Context, db *pgxpool.Pool, files fs.FS, directory string) error {
+	connection, err := db.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer connection.Release()
+	if _, err = connection.Exec(ctx, `SELECT pg_advisory_lock(742091683)`); err != nil {
+		return err
+	}
+	defer func() { _, _ = connection.Exec(context.Background(), `SELECT pg_advisory_unlock(742091683)`) }()
+	if _, err := connection.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version BIGINT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 	)`); err != nil {
 		return err
 	}
-	if err := baselineExistingSchema(ctx, db); err != nil {
+	if err := baselineExistingSchema(ctx, connection); err != nil {
 		return err
 	}
-	entries, err := os.ReadDir(directory)
+	entries, err := fs.ReadDir(files, directory)
 	if err != nil {
 		return fmt.Errorf("read migrations: %w", err)
 	}
@@ -40,22 +49,22 @@ func RunMigrations(ctx context.Context, db *pgxpool.Pool, directory string) erro
 		if parseErr != nil {
 			return fmt.Errorf("invalid migration name %s", entry.Name())
 		}
-		items = append(items, migration{version: version, name: entry.Name(), path: filepath.Join(directory, entry.Name())})
+		items = append(items, migration{version: version, name: entry.Name(), path: path.Join(directory, entry.Name())})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].version < items[j].version })
 	for _, item := range items {
 		var applied bool
-		if err = db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, item.version).Scan(&applied); err != nil {
+		if err = connection.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, item.version).Scan(&applied); err != nil {
 			return err
 		}
 		if applied {
 			continue
 		}
-		sql, readErr := os.ReadFile(item.path)
+		sql, readErr := fs.ReadFile(files, item.path)
 		if readErr != nil {
 			return readErr
 		}
-		tx, txErr := db.Begin(ctx)
+		tx, txErr := connection.Begin(ctx)
 		if txErr != nil {
 			return txErr
 		}
@@ -74,7 +83,7 @@ func RunMigrations(ctx context.Context, db *pgxpool.Pool, directory string) erro
 }
 
 // Baselines databases whose first migrations were applied manually before the runner existed.
-func baselineExistingSchema(ctx context.Context, db *pgxpool.Pool) error {
+func baselineExistingSchema(ctx context.Context, db *pgxpool.Conn) error {
 	_, err := db.Exec(ctx, `
 		INSERT INTO schema_migrations(version)
 		SELECT 1 WHERE to_regclass('public.users') IS NOT NULL

@@ -2,12 +2,16 @@ package http
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	core "backend/internal/core/domain"
 	"backend/internal/modules/workforce/application"
 	"backend/internal/modules/workforce/domain"
+	previewexcel "backend/internal/modules/workforce/infrastructure/excel"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,6 +33,64 @@ type registerWorkerRequest struct {
 	EmergencyContactName  string `json:"emergency_contact_name"`
 	EmergencyContactPhone string `json:"emergency_contact_phone"`
 	Notes                 string `json:"notes"`
+}
+
+func previewQuery(c *gin.Context) (time.Time, []string, []string, int, int, error) {
+	var date time.Time
+	var err error
+	if value := strings.TrimSpace(c.Query("date")); value != "" {
+		date, err = time.Parse("2006-01-02", value)
+		if err != nil {
+			return date, nil, nil, 0, 0, fmt.Errorf("date must use YYYY-MM-DD")
+		}
+	}
+	page, pageSize := 1, 20
+	if value := c.Query("page"); value != "" {
+		page, err = strconv.Atoi(value)
+		if err != nil || page < 1 {
+			return date, nil, nil, 0, 0, fmt.Errorf("page must be positive")
+		}
+	}
+	if value := c.Query("page_size"); value != "" {
+		pageSize, err = strconv.Atoi(value)
+		if err != nil || pageSize < 1 {
+			return date, nil, nil, 0, 0, fmt.Errorf("page_size must be positive")
+		}
+	}
+	return date, c.QueryArray("meal_type"), c.QueryArray("shift_type"), page, pageSize, nil
+}
+func (h *Handler) ShiftPreview(c *gin.Context) {
+	date, meals, shifts, page, size, err := previewQuery(c)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	report, err := h.service.ShiftPreview(c, date, meals, shifts, page, size, true)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, report)
+}
+func (h *Handler) ExportShiftPreview(c *gin.Context) {
+	date, meals, shifts, _, _, err := previewQuery(c)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	report, err := h.service.ShiftPreview(c, date, meals, shifts, 1, 20, false)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	content, err := previewexcel.BuildShiftPreview(report)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "could not generate Excel report"})
+		return
+	}
+	name := fmt.Sprintf("turnos-%s.xlsx", report.Date.Format("20060102"))
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	c.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content)
 }
 
 func (h *Handler) RegisterWorker(c *gin.Context) {

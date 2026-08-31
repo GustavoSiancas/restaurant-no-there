@@ -12,10 +12,10 @@ const (
 )
 
 const (
-	ClaimRequested                ClaimStatus = "REQUESTED"
-	ClaimValidated                ClaimStatus = "VALIDATED"
-	ClaimNotConsumed              ClaimStatus = "NOT_CONSUMED"
-	ClaimRequestedNotValidated    ClaimStatus = "REQUESTED_BUT_NOT_VALIDATED"
+	ClaimRequested             ClaimStatus = "REQUESTED"
+	ClaimValidated             ClaimStatus = "VALIDATED"
+	ClaimNotConsumed           ClaimStatus = "NOT_CONSUMED"
+	ClaimRequestedNotValidated ClaimStatus = "REQUESTED_BUT_NOT_VALIDATED"
 )
 
 func (m MealType) Valid() bool { return m == Breakfast || m == Afternoon || m == Night }
@@ -98,7 +98,7 @@ type DetailedReport struct {
 }
 
 type MealWindowClosure struct {
-	NotConsumed          int64 `json:"not_consumed"`
+	NotConsumed           int64 `json:"not_consumed"`
 	RequestedNotValidated int64 `json:"requested_but_not_validated"`
 }
 

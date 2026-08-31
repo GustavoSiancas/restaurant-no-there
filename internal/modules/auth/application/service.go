@@ -76,7 +76,8 @@ func (s *Service) issueWithRefresh(ctx context.Context, u *userdomain.User, agen
 	return &TokenPair{AccessToken: access, RefreshToken: refresh, TokenType: "Bearer", ExpiresIn: int64(s.accessTTL / time.Second)}, nil
 }
 func (s *Service) Refresh(ctx context.Context, raw, agent, ip string) (*TokenPair, error) {
-	old, err := s.tokens.FindValidByHash(ctx, s.jwt.HashRefreshToken(raw), time.Now())
+	now := time.Now()
+	old, err := s.tokens.FindValidByHash(ctx, s.jwt.HashRefreshToken(raw), now)
 	if err != nil {
 		return nil, fmt.Errorf("invalid refresh token")
 	}
@@ -87,8 +88,18 @@ func (s *Service) Refresh(ctx context.Context, raw, agent, ip string) (*TokenPai
 		}
 		return nil, fmt.Errorf("invalid refresh token")
 	}
-	if err = s.tokens.Revoke(ctx, old.ID, time.Now()); err != nil {
+	access, err := s.jwt.CreateAccessToken(u.ID, string(u.Role), s.accessTTL)
+	if err != nil {
 		return nil, err
 	}
-	return s.issueWithRefresh(ctx, u, agent, ip)
+	random := make([]byte, 32)
+	if _, err = rand.Read(random); err != nil {
+		return nil, err
+	}
+	refresh := base64.RawURLEncoding.EncodeToString(random)
+	replacement := &domain.RefreshToken{UserID: u.ID, TokenHash: s.jwt.HashRefreshToken(refresh), ExpiresAt: now.Add(s.refreshTTL), UserAgent: agent, IPAddress: ip}
+	if err = s.tokens.Rotate(ctx, old.ID, replacement, now); err != nil {
+		return nil, fmt.Errorf("invalid refresh token")
+	}
+	return &TokenPair{AccessToken: access, RefreshToken: refresh, TokenType: "Bearer", ExpiresIn: int64(s.accessTTL / time.Second)}, nil
 }

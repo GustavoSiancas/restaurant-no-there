@@ -95,14 +95,27 @@ func (s *Service) CloseExpiredMealWindows(ctx context.Context, lookbackDays int)
 	}
 	now := s.now().In(s.peruLocation())
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	firstDate := today.AddDate(0, 0, -lookbackDays)
+	oldestPending, err := s.repo.EarliestPendingServiceDate(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if oldestPending != nil {
+		pendingDate := time.Date(oldestPending.Year(), oldestPending.Month(), oldestPending.Day(), 0, 0, 0, 0, now.Location())
+		if pendingDate.Before(firstDate) {
+			firstDate = pendingDate
+		}
+	}
 	rules, err := s.repo.ListRules(ctx)
 	if err != nil {
 		return 0, err
 	}
 	var created int64
-	for daysAgo := lookbackDays; daysAgo >= 0; daysAgo-- {
-		serviceDate := today.AddDate(0, 0, -daysAgo)
+	for serviceDate := firstDate; !serviceDate.After(today); serviceDate = serviceDate.AddDate(0, 0, 1) {
 		for _, rule := range rules {
+			if !rule.Active {
+				continue
+			}
 			windowEnd, parseErr := parseRuleTime(serviceDate, rule.ClaimEnd)
 			if parseErr != nil {
 				return created, parseErr
@@ -110,11 +123,11 @@ func (s *Service) CloseExpiredMealWindows(ctx context.Context, lookbackDays int)
 			if now.Before(windowEnd) {
 				continue
 			}
-			inserted, createErr := s.repo.CreateNotClaimed(ctx, rule.MealType, serviceDate, now)
+			closure, createErr := s.repo.CloseMealWindow(ctx, rule.MealType, serviceDate, now)
 			if createErr != nil {
 				return created, createErr
 			}
-			created += inserted
+			created += closure.NotConsumed + closure.RequestedNotValidated
 		}
 	}
 	return created, nil
@@ -171,10 +184,10 @@ func (s *Service) DetailedReport(ctx context.Context, filters domain.ReportFilte
 
 func (s *Service) ListOrders(ctx context.Context, status domain.ClaimStatus) ([]domain.MealOrder, error) {
 	if status == "" {
-		status = domain.ClaimPending
+		status = domain.ClaimRequested
 	}
-	if status != domain.ClaimPending && status != domain.ClaimValidated {
-		return nil, fmt.Errorf("status must be PENDING or VALIDATED")
+	if status != domain.ClaimRequested && status != domain.ClaimValidated {
+		return nil, fmt.Errorf("status must be REQUESTED or VALIDATED")
 	}
 	return s.repo.ListOrders(ctx, status)
 }
@@ -201,8 +214,11 @@ func (s *Service) ValidateOrder(ctx context.Context, id, collaboratorID string) 
 	if existing.Status == domain.ClaimValidated {
 		return existing, fmt.Errorf("%w: order was already validated", core.ErrConflict)
 	}
-	if existing.Status == domain.ClaimNotClaimed {
-		return existing, fmt.Errorf("%w: NOT_CLAIMED records cannot be validated", core.ErrConflict)
+	if existing.Status == domain.ClaimNotConsumed || existing.Status == domain.ClaimRequestedNotValidated {
+		return existing, fmt.Errorf("%w: finalized meal records cannot be validated", core.ErrConflict)
+	}
+	if existing.Status == domain.ClaimRequested {
+		return existing, fmt.Errorf("%w: meal validation window is closed", core.ErrConflict)
 	}
 	return existing, core.ErrNotFound
 }
@@ -321,6 +337,9 @@ func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.Wo
 		return nil, err
 	}
 	for _, rule := range rules {
+		if !rule.Active {
+			continue
+		}
 		start, parseErr := parseRuleTime(now, rule.ClaimStart)
 		if parseErr != nil {
 			return nil, parseErr

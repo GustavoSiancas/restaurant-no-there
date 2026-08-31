@@ -11,20 +11,6 @@ tags:
   - name: Workforce
   - name: Meals
 paths:
-  /auth/bootstrap/admin:
-    post:
-      tags: [Auth]
-      summary: Crear el primer ADMIN
-      description: Solo funciona mientras no exista ningún ADMIN. Después queda bloqueado.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: '#/components/schemas/AdminBootstrapRequest'}
-      responses:
-        '201': {description: ADMIN creado, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
-        '400': {$ref: '#/components/responses/BadRequest'}
-        '409': {description: Ya existe un ADMIN}
   /users/register/management:
     post:
       tags: [Users]
@@ -113,14 +99,6 @@ paths:
       responses:
         '200': {description: Tokens nuevos, content: {application/json: {schema: {$ref: '#/components/schemas/TokenPair'}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
-  /users:
-    get:
-      tags: [Users]
-      summary: Listar usuarios
-      security: [{bearerAuth: []}]
-      responses:
-        '200': {description: Lista, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/User'}}}}}
-        '401': {$ref: '#/components/responses/Unauthorized'}
   /users/my:
     get:
       tags: [Users]
@@ -151,15 +129,6 @@ paths:
         '200': {description: Usuarios OWNER y RRHH, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MyUser'}}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
-  /users/{id}:
-    get:
-      tags: [Users]
-      summary: Obtener usuario
-      security: [{bearerAuth: []}]
-      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
-      responses:
-        '200': {description: Usuario, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
-        '404': {description: No encontrado}
   /worker-shift-assignments:
     post:
       tags: [Workforce]
@@ -175,15 +144,6 @@ paths:
         '201': {description: Asignación creada, content: {application/json: {schema: {$ref: '#/components/schemas/Assignment'}}}}
         '400': {$ref: '#/components/responses/BadRequest'}
         '409': {description: El trabajador ya tiene un turno ese día, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentConflict'}}}}
-    get:
-      tags: [Workforce]
-      summary: Consultar calendario entre fechas
-      security: [{bearerAuth: []}]
-      parameters:
-        - {name: from, in: query, required: true, example: '2026-09-01', schema: {type: string, format: date}}
-        - {name: to, in: query, required: true, example: '2026-09-30', schema: {type: string, format: date}}
-      responses:
-        '200': {description: Asignaciones, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Assignment'}}}}}
   /worker-shift-assignments/{id}:
     put:
       tags: [Workforce]
@@ -212,19 +172,6 @@ paths:
         '204': {description: Asignación eliminada}
         '404': {description: Asignación no encontrada}
         '423': {description: El turno ya está bloqueado por fecha}
-  /workers/{id}/shifts:
-    get:
-      tags: [Workforce]
-      summary: Consultar turnos de un trabajador
-      description: Disponible para ADMIN, OWNER y RRHH. La fecha de hoy se incluye tanto en past como en upcoming.
-      security: [{bearerAuth: []}]
-      parameters:
-        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
-        - {name: period, in: query, required: true, schema: {type: string, enum: [past, upcoming]}}
-      responses:
-        '200': {description: Turnos del trabajador, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Assignment'}}}}}
-        '400': {$ref: '#/components/responses/BadRequest'}
-        '403': {$ref: '#/components/responses/Forbidden'}
   /workers/{id}/shifts/range:
     get:
       tags: [Workforce]
@@ -299,25 +246,14 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {description: La comida ya fue reclamada}
-  /meal-claims/report:
-    get:
-      tags: [Meals]
-      summary: Reporte de comidas reclamadas y no reclamadas
-      description: Solo ADMIN, OWNER o RRHH.
-      security: [{bearerAuth: []}]
-      parameters:
-        - {name: from, in: query, required: true, schema: {type: string, format: date}}
-        - {name: to, in: query, required: true, schema: {type: string, format: date}}
-      responses:
-        '200': {description: Totales por tipo de comida, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MealReportRow'}}}}}
   /meal-orders:
     get:
       tags: [Meals]
       summary: Listar pedidos de comida
-      description: COLLABORATOR y OWNER. Por defecto devuelve PENDING; la lista pendiente deja de incluir un pedido apenas otro colaborador lo valida.
+      description: COLLABORATOR y OWNER. Por defecto devuelve REQUESTED; la lista deja de incluir un pedido al validarse o al cerrar su horario.
       security: [{bearerAuth: []}]
       parameters:
-        - {name: status, in: query, required: false, schema: {type: string, enum: [PENDING, VALIDATED], default: PENDING}}
+        - {name: status, in: query, required: false, schema: {type: string, enum: [REQUESTED, VALIDATED], default: REQUESTED}}
       responses:
         '200': {description: Pedidos, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MealOrder'}}}}}
         '400': {$ref: '#/components/responses/BadRequest'}
@@ -372,18 +308,42 @@ paths:
     patch:
       tags: [Meals]
       summary: Entregar y validar un pedido
-      description: Solo COLLABORATOR. La transición PENDING a VALIDATED es atómica.
+      description: Solo COLLABORATOR. La transición REQUESTED a VALIDATED es atómica y solo es posible antes del cierre del horario.
       security: [{bearerAuth: []}]
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
       responses:
         '200': {description: Pedido validado, content: {application/json: {schema: {$ref: '#/components/schemas/MealOrder'}}}}
         '404': {description: Pedido inexistente}
         '409': {description: El pedido ya fue validado por otro colaborador}
+  /workforce/shift-preview:
+    get:
+      tags: [Workforce]
+      summary: Vista previa paginada de turnos y comidas asignadas
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: date, in: query, required: false, schema: {type: string, format: date}}
+        - {name: meal_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}}}
+        - {name: shift_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [DIA, NOCHE]}}}
+        - {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: page_size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200': {description: Vista previa de turnos}
+  /workforce/shift-preview/export.xlsx:
+    get:
+      tags: [Workforce]
+      summary: Exportar vista previa de turnos a Excel
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: date, in: query, required: false, schema: {type: string, format: date}}
+        - {name: meal_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}}}
+        - {name: shift_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [DIA, NOCHE]}}}
+      responses:
+        '200': {description: Archivo XLSX, content: {application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: {}}}
   /ws/meal-orders:
     get:
       tags: [Meals]
       summary: WebSocket de pedidos en vivo
-      description: COLLABORATOR y OWNER. En navegador usar ws://localhost:8080/api/v1/ws/meal-orders?access_token=JWT. Emite MEAL_ORDER_CREATED y MEAL_ORDER_VALIDATED.
+      description: COLLABORATOR y OWNER. En navegador conectar con los subprotocolos ["bearer", "JWT"]. El token no se acepta en la URL. Emite MEAL_ORDER_CREATED y MEAL_ORDER_VALIDATED.
       parameters:
         - {name: access_token, in: query, required: false, schema: {type: string}}
       responses:
@@ -564,7 +524,7 @@ components:
         meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
         service_date: {type: string, format: date}
         claimed_at: {type: string, format: date-time}
-        status: {type: string, enum: [PENDING, VALIDATED, NOT_CLAIMED]}
+        status: {type: string, enum: [REQUESTED, VALIDATED, NOT_CONSUMED, REQUESTED_BUT_NOT_VALIDATED]}
         validated_at: {type: string, format: date-time}
         validated_by: {type: string, format: uuid}
         notes: {type: string}
@@ -606,9 +566,9 @@ components:
           properties:
             total_eligible: {type: integer}
             consumed: {type: integer, description: Pedidos VALIDATED}
-            requested_not_validated: {type: integer, description: Pedidos PENDING}
-            not_claimed: {type: integer, description: Registros NOT_CLAIMED}
-            did_not_consume: {type: integer, description: PENDING más NOT_CLAIMED}
+            requested_not_validated: {type: integer, description: Registros REQUESTED_BUT_NOT_VALIDATED}
+            not_claimed: {type: integer, description: Registros NOT_CONSUMED}
+            did_not_consume: {type: integer, description: REQUESTED_BUT_NOT_VALIDATED más NOT_CONSUMED}
         data:
           type: array
           items: {$ref: '#/components/schemas/DetailedMealReportRow'}
@@ -623,7 +583,7 @@ components:
         service_date: {type: string, format: date-time}
         meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
         shift_type: {type: string, enum: [DIA, NOCHE]}
-        status: {type: string, enum: [PENDING, VALIDATED, NOT_CLAIMED]}
+        status: {type: string, enum: [REQUESTED, VALIDATED, NOT_CONSUMED, REQUESTED_BUT_NOT_VALIDATED]}
         claimed_at: {type: string, format: date-time}
         validated_at: {type: string, format: date-time}
         worker_id: {type: string, format: uuid}
