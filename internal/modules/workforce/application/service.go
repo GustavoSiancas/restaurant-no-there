@@ -198,41 +198,126 @@ func (s *Service) ShiftPreview(
 	page,
 	pageSize int,
 	paginate bool,
-) (*domain.ShiftPreview, error) {
+    ) (*domain.ShiftPreview, error) {
 
-	// Fecha por defecto: hoy en Perú
+	// ============================================================
+	// 1. NORMALIZAR FECHA
+	// ============================================================
 	if date.IsZero() {
 		date = s.peruToday()
 	} else {
 		date = s.peruDate(date)
 	}
 
-	// Filtro opcional por comidas
+	fmt.Printf(
+		"[SHIFT_PREVIEW] start date=%s mealTypes=%v page=%d pageSize=%d paginate=%v\n",
+		date.Format("2006-01-02"),
+		mealTypes,
+		page,
+		pageSize,
+		paginate,
+	)
+
+	// ============================================================
+	// 2. VALIDAR FILTRO DE COMIDAS
+	// Si no llega meal_type, mealFilter queda vacío
+	// y eso significa "mostrar todas las comidas".
+	// ============================================================
 	mealFilter := make(map[string]bool)
 
 	for _, value := range mealTypes {
+
 		if value != "DESAYUNO" &&
 			value != "TARDE" &&
 			value != "NOCHE" {
+
+			fmt.Printf(
+				"[SHIFT_PREVIEW] invalid meal_type=%s\n",
+				value,
+			)
+
 			return nil, fmt.Errorf("invalid meal_type")
 		}
 
 		mealFilter[value] = true
 	}
 
+	fmt.Printf(
+		"[SHIFT_PREVIEW] mealFilter=%v count=%d\n",
+		mealFilter,
+		len(mealFilter),
+	)
+
+	// ============================================================
+	// 3. OBTENER TODOS LOS TURNOS DE ESA FECHA
 	// IMPORTANTE:
-	// No filtramos por turno.
-	// Traemos DIA y NOCHE.
+	// Acá queremos DIA + NOCHE.
+	// Si devuelve 0, el problema está en el repository.
+	// ============================================================
 	rows, err := s.repo.ListShiftPreview(ctx, date, nil)
+
 	if err != nil {
+		fmt.Printf(
+			"[SHIFT_PREVIEW] ERROR ListShiftPreview date=%s err=%v\n",
+			date.Format("2006-01-02"),
+			err,
+		)
+
 		return nil, err
 	}
 
+	fmt.Printf(
+		"[SHIFT_PREVIEW] repository rows=%d date=%s\n",
+		len(rows),
+		date.Format("2006-01-02"),
+	)
+
+	// Log de cada asignación encontrada.
+	// Temporalmente sirve bastante para Railway.
+	for i, row := range rows {
+		fmt.Printf(
+			"[SHIFT_PREVIEW] row[%d] assignmentID=%s shift=%s workDate=%s\n",
+			i,
+			row.AssignmentID,
+			row.ShiftType,
+			row.WorkDate.Format("2006-01-02"),
+		)
+	}
+
+	// ============================================================
+	// 4. OBTENER REGLAS ACTIVAS DE COMIDA
+	// Si por ejemplo DESAYUNO no aparece aquí,
+	// un filtro meal_type=DESAYUNO terminará en 0.
+	// ============================================================
 	rules, err := s.repo.ListActiveMealRules(ctx)
+
 	if err != nil {
+		fmt.Printf(
+			"[SHIFT_PREVIEW] ERROR ListActiveMealRules err=%v\n",
+			err,
+		)
+
 		return nil, err
 	}
 
+	fmt.Printf(
+		"[SHIFT_PREVIEW] active meal rules=%d\n",
+		len(rules),
+	)
+
+	for i, rule := range rules {
+		fmt.Printf(
+			"[SHIFT_PREVIEW] rule[%d] meal=%s start=%s end=%s\n",
+			i,
+			rule.MealType,
+			rule.Start,
+			rule.End,
+		)
+	}
+
+	// ============================================================
+	// 5. RESUMEN INICIAL
+	// ============================================================
 	summary := domain.ShiftPreviewSummary{
 		ByShift: map[string]int{
 			"DIA":   0,
@@ -245,40 +330,82 @@ func (s *Service) ShiftPreview(
 		},
 	}
 
-	filtered := make([]domain.ShiftPreviewRow, 0, len(rows))
+	filtered := make(
+		[]domain.ShiftPreviewRow,
+		0,
+		len(rows),
+	)
 
+	// ============================================================
+	// 6. PROCESAR CADA TRABAJADOR
+	// ============================================================
 	for _, row := range rows {
 
-		// Evita duplicados si el objeto ya viniera con comidas
+		// Limpiar por seguridad si ya venía con comidas.
 		row.AssignedMeals = nil
+
+		fmt.Printf(
+			"[SHIFT_PREVIEW] processing assignmentID=%s shift=%s\n",
+			row.AssignmentID,
+			row.ShiftType,
+		)
 
 		for _, rule := range rules {
 
 			eligible :=
-				(row.ShiftType == domain.ShiftDay &&
-					(rule.MealType == "DESAYUNO" ||
-						rule.MealType == "TARDE")) ||
-					(row.ShiftType == domain.ShiftNight &&
-						(rule.MealType == "NOCHE" ||
-							rule.MealType == "DESAYUNO"))
+				(
+					row.ShiftType == domain.ShiftDay &&
+						(
+							rule.MealType == "DESAYUNO" ||
+								rule.MealType == "TARDE"
+						)
+				) ||
+					(
+						row.ShiftType == domain.ShiftNight &&
+							(
+								rule.MealType == "NOCHE" ||
+									rule.MealType == "DESAYUNO"
+							)
+					)
+
+			fmt.Printf(
+				"[SHIFT_PREVIEW] check assignmentID=%s shift=%s meal=%s eligible=%v\n",
+				row.AssignmentID,
+				row.ShiftType,
+				rule.MealType,
+				eligible,
+			)
 
 			if !eligible {
 				continue
 			}
 
-			// Si mandaron filtro de comida, aplicarlo.
-			// Si mealTypes está vacío, pasan todas.
-			if len(mealFilter) > 0 && !mealFilter[rule.MealType] {
+			// Si hay filtro de comida, solo dejamos pasar
+			// las comidas seleccionadas.
+			if len(mealFilter) > 0 &&
+				!mealFilter[rule.MealType] {
+
+				fmt.Printf(
+					"[SHIFT_PREVIEW] meal filtered assignmentID=%s meal=%s\n",
+					row.AssignmentID,
+					rule.MealType,
+				)
+
 				continue
 			}
 
 			serviceDate := row.WorkDate
 
-			// El desayuno de turno noche corresponde
-			// al día siguiente.
+			// Turno noche:
+			// su desayuno corresponde al día siguiente.
 			if row.ShiftType == domain.ShiftNight &&
 				rule.MealType == "DESAYUNO" {
-				serviceDate = serviceDate.AddDate(0, 0, 1)
+
+				serviceDate = serviceDate.AddDate(
+					0,
+					0,
+					1,
+				)
 			}
 
 			displayName := map[string]string{
@@ -293,22 +420,40 @@ func (s *Service) ShiftPreview(
 					MealType:    rule.MealType,
 					DisplayName: displayName,
 					ServiceDate: serviceDate,
-					Start:       strings.TrimSuffix(rule.Start, ":00"),
-					End:         strings.TrimSuffix(rule.End, ":00"),
+					Start: strings.TrimSuffix(
+						rule.Start,
+						":00",
+					),
+					End: strings.TrimSuffix(
+						rule.End,
+						":00",
+					),
 				},
+			)
+
+			fmt.Printf(
+				"[SHIFT_PREVIEW] meal added assignmentID=%s meal=%s serviceDate=%s\n",
+				row.AssignmentID,
+				rule.MealType,
+				serviceDate.Format("2006-01-02"),
 			)
 		}
 
-		// Si se filtró por comida y este trabajador
-		// no tiene esa comida, no aparece.
+		// Si pidieron filtro de comida y este trabajador
+		// no tiene ninguna de esas comidas, se excluye.
 		if len(mealFilter) > 0 &&
 			len(row.AssignedMeals) == 0 {
+
+			fmt.Printf(
+				"[SHIFT_PREVIEW] worker excluded assignmentID=%s reason=no_matching_meal\n",
+				row.AssignmentID,
+			)
+
 			continue
 		}
 
 		summary.TotalAssigned++
 
-		// Seguimos devolviendo el turno del trabajador.
 		summary.ByShift[string(row.ShiftType)]++
 
 		for _, meal := range row.AssignedMeals {
@@ -316,9 +461,17 @@ func (s *Service) ShiftPreview(
 		}
 
 		filtered = append(filtered, row)
+
+		fmt.Printf(
+			"[SHIFT_PREVIEW] worker included assignmentID=%s meals=%d\n",
+			row.AssignmentID,
+			len(row.AssignedMeals),
+		)
 	}
 
-	// Defaults de paginación
+	// ============================================================
+	// 7. PAGINACIÓN
+	// ============================================================
 	if page < 1 {
 		page = 1
 	}
@@ -334,13 +487,16 @@ func (s *Service) ShiftPreview(
 	total := len(filtered)
 
 	totalPages := 0
+
 	if total > 0 {
-		totalPages = (total + pageSize - 1) / pageSize
+		totalPages =
+			(total + pageSize - 1) / pageSize
 	}
 
 	data := filtered
 
 	if paginate {
+
 		start := (page - 1) * pageSize
 
 		if start > total {
@@ -355,6 +511,21 @@ func (s *Service) ShiftPreview(
 
 		data = filtered[start:end]
 	}
+
+	// ============================================================
+	// 8. LOG FINAL
+	// ============================================================
+	fmt.Printf(
+		"[SHIFT_PREVIEW] finished date=%s rowsRepo=%d filtered=%d pageData=%d totalPages=%d summaryTotal=%d byShift=%v byMeal=%v\n",
+		date.Format("2006-01-02"),
+		len(rows),
+		len(filtered),
+		len(data),
+		totalPages,
+		summary.TotalAssigned,
+		summary.ByShift,
+		summary.ByMeal,
+	)
 
 	return &domain.ShiftPreview{
 		Date:       date,
