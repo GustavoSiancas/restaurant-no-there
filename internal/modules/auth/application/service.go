@@ -16,16 +16,18 @@ type Service struct {
 	users      users.UserRepository
 	tokens     RefreshTokenRepository
 	jwt        TokenService
+	accessTTL  time.Duration
+	workerTTL  time.Duration
 	refreshTTL time.Duration
 }
 
-func NewService(u users.UserRepository, t RefreshTokenRepository, j TokenService, ttl time.Duration) *Service {
-	return &Service{users: u, tokens: t, jwt: j, refreshTTL: ttl}
+func NewService(u users.UserRepository, t RefreshTokenRepository, j TokenService, accessTTL, workerTTL, refreshTTL time.Duration) *Service {
+	return &Service{users: u, tokens: t, jwt: j, accessTTL: accessTTL, workerTTL: workerTTL, refreshTTL: refreshTTL}
 }
 
 type TokenPair struct {
 	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int64  `json:"expires_in"`
 }
@@ -38,17 +40,27 @@ func (s *Service) LoginPassword(ctx context.Context, username, password, agent, 
 	if u.Role == userdomain.RoleWorker || !u.Active {
 		return nil, fmt.Errorf("invalid credentials")
 	}
-	return s.issue(ctx, u, agent, ip)
+	return s.issueWithRefresh(ctx, u, agent, ip)
 }
 func (s *Service) LoginDNI(ctx context.Context, dni, agent, ip string) (*TokenPair, error) {
 	u, err := s.users.FindByDNI(ctx, dni)
 	if err != nil || u.Role != userdomain.RoleWorker || !u.Active {
 		return nil, fmt.Errorf("invalid credentials")
 	}
-	return s.issue(ctx, u, agent, ip)
+	if err = s.tokens.RevokeAllByUser(ctx, u.ID, time.Now()); err != nil {
+		return nil, err
+	}
+	return s.issueWorker(u)
 }
-func (s *Service) issue(ctx context.Context, u *userdomain.User, agent, ip string) (*TokenPair, error) {
-	access, err := s.jwt.CreateAccessToken(u.ID, string(u.Role))
+func (s *Service) issueWorker(u *userdomain.User) (*TokenPair, error) {
+	access, err := s.jwt.CreateAccessToken(u.ID, string(u.Role), s.workerTTL)
+	if err != nil {
+		return nil, err
+	}
+	return &TokenPair{AccessToken: access, TokenType: "Bearer", ExpiresIn: int64(s.workerTTL / time.Second)}, nil
+}
+func (s *Service) issueWithRefresh(ctx context.Context, u *userdomain.User, agent, ip string) (*TokenPair, error) {
+	access, err := s.jwt.CreateAccessToken(u.ID, string(u.Role), s.accessTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +73,7 @@ func (s *Service) issue(ctx context.Context, u *userdomain.User, agent, ip strin
 	if err = s.tokens.Create(ctx, t); err != nil {
 		return nil, err
 	}
-	return &TokenPair{AccessToken: access, RefreshToken: refresh, TokenType: "Bearer", ExpiresIn: 300}, nil
+	return &TokenPair{AccessToken: access, RefreshToken: refresh, TokenType: "Bearer", ExpiresIn: int64(s.accessTTL / time.Second)}, nil
 }
 func (s *Service) Refresh(ctx context.Context, raw, agent, ip string) (*TokenPair, error) {
 	old, err := s.tokens.FindValidByHash(ctx, s.jwt.HashRefreshToken(raw), time.Now())
@@ -69,11 +81,14 @@ func (s *Service) Refresh(ctx context.Context, raw, agent, ip string) (*TokenPai
 		return nil, fmt.Errorf("invalid refresh token")
 	}
 	u, err := s.users.FindByID(ctx, old.UserID)
-	if err != nil || !u.Active {
+	if err != nil || !u.Active || u.Role == userdomain.RoleWorker {
+		if err == nil && u.Role == userdomain.RoleWorker {
+			_ = s.tokens.RevokeAllByUser(ctx, u.ID, time.Now())
+		}
 		return nil, fmt.Errorf("invalid refresh token")
 	}
 	if err = s.tokens.Revoke(ctx, old.ID, time.Now()); err != nil {
 		return nil, err
 	}
-	return s.issue(ctx, u, agent, ip)
+	return s.issueWithRefresh(ctx, u, agent, ip)
 }

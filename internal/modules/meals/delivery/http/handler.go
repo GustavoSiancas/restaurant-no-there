@@ -15,32 +15,51 @@ type Handler struct{ service *application.Service }
 
 func New(service *application.Service) *Handler { return &Handler{service: service} }
 
-type claimRequest struct {
+type confirmPrintRequest struct {
 	MealType domain.MealType `json:"meal_type"`
+	Printed  bool            `json:"printed"`
 	Notes    string          `json:"notes"`
 }
 
-func (h *Handler) Claim(c *gin.Context) {
-	var r claimRequest
+func (h *Handler) ClaimPreview(c *gin.Context) {
+	workerID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated user not found"})
+		return
+	}
+	preview, err := h.service.ClaimPreview(c, workerID.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not obtain meal claim preview"})
+		return
+	}
+	c.JSON(http.StatusOK, preview)
+}
+
+func (h *Handler) ConfirmPrint(c *gin.Context) {
+	var r confirmPrintRequest
 	if c.ShouldBindJSON(&r) != nil {
-		c.JSON(400, gin.H{"error": "invalid JSON"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+	if !r.Printed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "printed must be true; no meal claim was created"})
 		return
 	}
 	workerID, ok := c.Get("user_id")
 	if !ok {
-		c.JSON(401, gin.H{"error": "authenticated user not found"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated user not found"})
 		return
 	}
 	claim, err := h.service.Claim(c, workerID.(string), r.MealType, r.Notes)
 	if err != nil {
-		status := 400
+		status := http.StatusBadRequest
 		if errors.Is(err, core.ErrConflict) {
 			status = http.StatusConflict
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		c.JSON(status, gin.H{"error": err.Error(), "claim_created": false})
 		return
 	}
-	c.JSON(http.StatusCreated, claim)
+	c.JSON(http.StatusCreated, gin.H{"claim_created": true, "claim": claim})
 }
 func (h *Handler) Report(c *gin.Context) {
 	from, e1 := time.Parse("2006-01-02", c.Query("from"))

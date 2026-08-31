@@ -77,6 +77,16 @@ func scanClaim(row pgx.Row) (*domain.Claim, error) {
 func (r *Repository) FindClaim(ctx context.Context, workerID string, mealType domain.MealType, date time.Time) (*domain.Claim, error) {
 	return scanClaim(r.db.QueryRow(ctx, `SELECT id,worker_id,shift_assignment_id,meal_type,service_date,claimed_at,notes,created_at,updated_at FROM meal_claims WHERE worker_id=$1 AND meal_type=$2 AND service_date=$3`, workerID, mealType, date))
 }
+func (r *Repository) FindWorkerTicketIdentity(ctx context.Context, workerID string) (*domain.WorkerTicketIdentity, error) {
+	var identity domain.WorkerTicketIdentity
+	err := r.db.QueryRow(ctx, `SELECT u.id,p.first_name,p.last_name,c.identifier
+		FROM users u
+		JOIN user_profiles p ON p.user_id=u.id
+		JOIN user_credentials c ON c.user_id=u.id AND c.type='DNI' AND c.active=TRUE
+		WHERE u.id=$1 AND u.role='WORKER' AND u.active=TRUE`, workerID).
+		Scan(&identity.ID, &identity.FirstName, &identity.LastName, &identity.DNI)
+	return &identity, translate(err)
+}
 func (r *Repository) Report(ctx context.Context, from, to time.Time) ([]domain.ReportRow, error) {
 	rows, err := r.db.Query(ctx, `WITH eligible AS (
 		SELECT worker_id, work_date AS service_date, 'DESAYUNO'::meal_type AS meal_type FROM worker_shift_assignments WHERE shift_type='DIA'

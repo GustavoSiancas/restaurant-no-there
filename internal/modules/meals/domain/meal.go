@@ -63,3 +63,32 @@ type WorkerStatus struct {
 	MealWindowOpen bool          `json:"meal_window_open"`
 	CurrentMeal    *CurrentMeal  `json:"current_meal,omitempty"`
 }
+
+type WorkerTicketIdentity struct {
+	ID        string
+	FirstName string
+	LastName  string
+	DNI       string
+}
+
+type ClaimPreviewWorker struct {
+	ID             string `json:"id"`
+	FullName       string `json:"fullName"`
+	DocumentNumber string `json:"documentNumber"`
+}
+
+type ClaimPreviewService struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+type ClaimPreview struct {
+	RedemptionID string               `json:"redemptionId,omitempty"`
+	TicketNumber string               `json:"ticketNumber,omitempty"`
+	Status       string               `json:"status"`
+	Worker       ClaimPreviewWorker   `json:"worker"`
+	Service      *ClaimPreviewService `json:"service,omitempty"`
+	Date         string               `json:"date"`
+	Time         string               `json:"time"`
+	Reason       string               `json:"reason,omitempty"`
+}

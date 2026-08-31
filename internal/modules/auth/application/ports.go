@@ -8,7 +8,7 @@ import (
 )
 
 type TokenService interface {
-	CreateAccessToken(userID, role string) (string, error)
+	CreateAccessToken(userID, role string, ttl time.Duration) (string, error)
 	HashRefreshToken(token string) string
 }
 

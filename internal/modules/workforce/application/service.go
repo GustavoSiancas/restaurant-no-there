@@ -19,8 +19,12 @@ type Service struct {
 	now   func() time.Time
 }
 
-func NewService(repo Repository, users users.UserRepository) *Service {
-	return &Service{repo: repo, users: users, now: time.Now}
+func NewService(repo Repository, users users.UserRepository, clocks ...func() time.Time) *Service {
+	clock := time.Now
+	if len(clocks) > 0 && clocks[0] != nil {
+		clock = clocks[0]
+	}
+	return &Service{repo: repo, users: users, now: clock}
 }
 
 type RegisterWorkerInput struct {

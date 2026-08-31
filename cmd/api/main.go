@@ -49,11 +49,17 @@ func main() {
 	}
 	usersRepo := userpg.New(db)
 	tokensRepo := tokenpg.New(db)
-	jwtService := jwtinfra.New(cfg.JWTSecret, cfg.AccessTTL)
+	clock := time.Now
+	if cfg.FixedTime != nil {
+		fixedTime := *cfg.FixedTime
+		clock = func() time.Time { return fixedTime }
+		log.Printf("APP_FIXED_TIME enabled: %s", fixedTime.Format(time.RFC3339))
+	}
+	jwtService := jwtinfra.New(cfg.JWTSecret)
 	usersHandler := userhttp.New(userapp.NewService(usersRepo))
-	authHandler := authhttp.New(authapp.NewService(usersRepo, tokensRepo, jwtService, cfg.RefreshTTL))
-	workforceHandler := workforcehttp.New(workforceapp.NewService(workforcepg.New(db), usersRepo))
-	mealHandler := mealhttp.New(mealapp.NewService(mealpg.New(db)))
+	authHandler := authhttp.New(authapp.NewService(usersRepo, tokensRepo, jwtService, cfg.AccessTTL, cfg.WorkerAccessTTL, cfg.RefreshTTL))
+	workforceHandler := workforcehttp.New(workforceapp.NewService(workforcepg.New(db), usersRepo, clock))
+	mealHandler := mealhttp.New(mealapp.NewService(mealpg.New(db), clock))
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.AllowedOrigins,
@@ -82,7 +88,8 @@ func main() {
 	protected.GET("/workers/:id/shifts", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.ListWorkerAssignments)
 	protected.GET("/workers/:id/shifts/range", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.ListWorkerAssignmentsRange)
 	protected.GET("/workers/my/shifts/range", authhttp.RequireRoles("WORKER"), workforceHandler.ListMyAssignmentsRange)
-	protected.POST("/meal-claims", authhttp.RequireRoles("WORKER"), mealHandler.Claim)
+	protected.GET("/meal-claims/my/preview", authhttp.RequireRoles("WORKER"), mealHandler.ClaimPreview)
+	protected.POST("/meal-claims/my/confirm-print", authhttp.RequireRoles("WORKER"), mealHandler.ConfirmPrint)
 	protected.GET("/meal-schedules", mealHandler.ListSchedules)
 	protected.GET("/workers/my/status", authhttp.RequireRoles("WORKER"), mealHandler.WorkerStatus)
 	protected.GET("/meal-claims/report", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), mealHandler.Report)

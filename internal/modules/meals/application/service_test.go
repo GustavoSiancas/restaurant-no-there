@@ -32,6 +32,9 @@ func (f *fakeMealsRepository) FindClaim(context.Context, string, domain.MealType
 	}
 	return nil, core.ErrNotFound
 }
+func (f *fakeMealsRepository) FindWorkerTicketIdentity(context.Context, string) (*domain.WorkerTicketIdentity, error) {
+	return &domain.WorkerTicketIdentity{ID: "worker", FirstName: "María", LastName: "Pérez", DNI: "12345678"}, nil
+}
 func (f *fakeMealsRepository) FindEligibleAssignment(context.Context, string, domain.MealType, time.Time) (string, error) {
 	if !f.eligible {
 		return "", core.ErrNotFound

@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Modular Backend API
   version: 1.0.0
-  description: API de usuarios y autenticación. Access token 5 minutos; refresh token 7 días.
+  description: API de usuarios y autenticación. ADMIN, OWNER y RRHH reciben access token de 5 minutos y refresh token de 7 días. WORKER recibe access token de 45 segundos sin refresh token.
 servers:
   - url: http://localhost:8080/api/v1
 tags:
@@ -73,15 +73,16 @@ paths:
     post:
       tags: [Auth]
       summary: Login temporal de WORKER por DNI
-      description: Este mecanismo será reemplazable por Face Scan.
+      description: Este mecanismo será reemplazable por Face Scan. Emite un access token de 45 segundos y no genera refresh token.
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DNILogin'}}}}
       responses:
-        '200': {description: Tokens, content: {application/json: {schema: {$ref: '#/components/schemas/TokenPair'}}}}
+        '200': {description: Access token temporal sin refresh token, content: {application/json: {schema: {$ref: '#/components/schemas/WorkerAccessToken'}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
   /auth/refresh:
     post:
       tags: [Auth]
-      summary: Rotar refresh token
+      summary: Rotar refresh token administrativo
+      description: Disponible solamente para ADMIN, OWNER y RRHH. Los WORKER no poseen refresh token.
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RefreshRequest'}}}}
       responses:
         '200': {description: Tokens nuevos, content: {application/json: {schema: {$ref: '#/components/schemas/TokenPair'}}}}
@@ -245,21 +246,33 @@ paths:
       responses:
         '200': {description: Horarios de comidas, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MealSchedule'}}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
-  /meal-claims:
+  /meal-claims/my/preview:
+    get:
+      tags: [Meals]
+      summary: Obtener la comida que puede reclamar el trabajador
+      description: Solo WORKER. Usa el usuario del token y no crea registros. Informa turno, comida, horario, disponibilidad y si ya fue reclamada.
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Vista previa del reclamo, content: {application/json: {schema: {$ref: '#/components/schemas/MealClaimPreview'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /meal-claims/my/confirm-print:
     post:
       tags: [Meals]
-      summary: Reclamar una comida
-      description: Solo WORKER. Usa la fecha y hora actual de America/Lima y valida automáticamente el turno asignado. Cada tipo de comida puede reclamarse una sola vez al día.
+      summary: Confirmar impresión y registrar el reclamo
+      description: Solo WORKER. Crea meal_claims únicamente cuando printed es true. Vuelve a validar horario, turno elegible y que la comida no haya sido reclamada.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/MealClaimRequest'}
+            schema: {$ref: '#/components/schemas/MealPrintConfirmation'}
       responses:
-        '201': {description: Reclamo creado, content: {application/json: {schema: {$ref: '#/components/schemas/MealClaim'}}}}
+        '201': {description: Impresión confirmada y reclamo registrado, content: {application/json: {schema: {$ref: '#/components/schemas/MealPrintConfirmationResponse'}}}}
         '400': {$ref: '#/components/responses/BadRequest'}
-        '409': {description: La comida ya fue reclamada ese día}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {description: La comida ya fue reclamada}
   /meal-claims/report:
     get:
       tags: [Meals]
@@ -386,6 +399,38 @@ components:
                 assignment_id: {type: string, format: uuid}
                 shift_type: {type: string, enum: [DIA, NOCHE]}
                 notes: {type: string}
+    MealClaimPreview:
+      type: object
+      properties:
+        redemptionId: {type: string, format: uuid}
+        ticketNumber: {type: string, example: TK-20260830-A1B2C3D4-TARDE}
+        status: {type: string, enum: [AUTHORIZED, DENIED]}
+        worker:
+          type: object
+          properties:
+            id: {type: string, format: uuid}
+            fullName: {type: string, example: María Pérez Gómez}
+            documentNumber: {type: string, example: '****5678'}
+        service:
+          type: object
+          properties:
+            type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
+            name: {type: string, enum: [DESAYUNO, ALMUERZO, CENA]}
+        date: {type: string, example: '30/08/2026'}
+        time: {type: string, example: '12:15 p.m.'}
+        reason: {type: string}
+    MealPrintConfirmation:
+      type: object
+      required: [meal_type, printed]
+      properties:
+        meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+        printed: {type: boolean, example: true}
+        notes: {type: string, example: Ticket impreso correctamente}
+    MealPrintConfirmationResponse:
+      type: object
+      properties:
+        claim_created: {type: boolean, example: true}
+        claim: {$ref: '#/components/schemas/MealClaim'}
     MealSchedule:
       type: object
       properties:
@@ -395,12 +440,6 @@ components:
         timezone: {type: string, example: America/Lima}
         description: {type: string}
         active: {type: boolean}
-    MealClaimRequest:
-      type: object
-      required: [meal_type]
-      properties:
-        meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
-        notes: {type: string}
     MealClaim:
       type: object
       properties:
@@ -437,6 +476,13 @@ components:
         refresh_token: {type: string}
         token_type: {type: string, example: Bearer}
         expires_in: {type: integer, example: 300}
+    WorkerAccessToken:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token: {type: string}
+        token_type: {type: string, example: Bearer}
+        expires_in: {type: integer, example: 45}
     User:
       type: object
       properties:

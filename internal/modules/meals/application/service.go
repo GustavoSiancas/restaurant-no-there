@@ -16,7 +16,13 @@ type Service struct {
 	now  func() time.Time
 }
 
-func NewService(repo Repository) *Service { return &Service{repo: repo, now: time.Now} }
+func NewService(repo Repository, clocks ...func() time.Time) *Service {
+	clock := time.Now
+	if len(clocks) > 0 && clocks[0] != nil {
+		clock = clocks[0]
+	}
+	return &Service{repo: repo, now: clock}
+}
 
 func (s *Service) Claim(ctx context.Context, workerID string, mealType domain.MealType, notes string) (*domain.Claim, error) {
 	if !mealType.Valid() {
@@ -81,6 +87,82 @@ func (s *Service) Report(ctx context.Context, from, to time.Time) ([]domain.Repo
 
 func (s *Service) ListSchedules(ctx context.Context) ([]domain.ServiceRule, error) {
 	return s.repo.ListRules(ctx)
+}
+
+func (s *Service) ClaimPreview(ctx context.Context, workerID string) (*domain.ClaimPreview, error) {
+	status, err := s.WorkerStatus(ctx, workerID)
+	if err != nil {
+		return nil, err
+	}
+	identity, err := s.repo.FindWorkerTicketIdentity(ctx, workerID)
+	if err != nil {
+		return nil, err
+	}
+	preview := &domain.ClaimPreview{Status: "DENIED", Date: status.PeruTime.Format("02/01/2006"), Time: formatTicketTime(status.PeruTime)}
+	preview.Worker = domain.ClaimPreviewWorker{ID: identity.ID, FullName: strings.TrimSpace(identity.FirstName + " " + identity.LastName), DocumentNumber: maskDocument(identity.DNI)}
+	if !status.MealWindowOpen || status.CurrentMeal == nil {
+		preview.Reason = "no hay un horario de comida disponible en este momento"
+		return preview, nil
+	}
+	if !status.CurrentMeal.Eligible {
+		preview.Reason = "el trabajador no tiene un turno elegible para esta comida"
+		return preview, nil
+	}
+	if status.CurrentMeal.AlreadyClaimed {
+		preview.Reason = "la comida ya fue reclamada hoy"
+		return preview, nil
+	}
+	if !status.CurrentMeal.CanClaim || status.CurrentShift == nil {
+		preview.Reason = "la comida no está disponible para reclamar"
+		return preview, nil
+	}
+	preview.Status = "AUTHORIZED"
+	preview.RedemptionID = status.CurrentShift.AssignmentID
+	preview.TicketNumber = ticketNumber(status.PeruTime, status.CurrentShift.AssignmentID, status.CurrentMeal.MealType)
+	preview.Service = ticketService(status.CurrentMeal.MealType)
+	return preview, nil
+}
+
+func maskDocument(document string) string {
+	document = strings.TrimSpace(document)
+	if len(document) <= 4 {
+		return strings.Repeat("*", len(document))
+	}
+	return strings.Repeat("*", len(document)-4) + document[len(document)-4:]
+}
+
+func formatTicketTime(value time.Time) string {
+	suffix := "a.m."
+	hour := value.Hour()
+	if hour >= 12 {
+		suffix = "p.m."
+	}
+	displayHour := hour % 12
+	if displayHour == 0 {
+		displayHour = 12
+	}
+	return fmt.Sprintf("%02d:%02d %s", displayHour, value.Minute(), suffix)
+}
+
+func ticketNumber(date time.Time, assignmentID string, mealType domain.MealType) string {
+	compactID := strings.ToUpper(strings.ReplaceAll(assignmentID, "-", ""))
+	if len(compactID) > 8 {
+		compactID = compactID[:8]
+	}
+	return fmt.Sprintf("TK-%s-%s-%s", date.Format("20060102"), compactID, mealType)
+}
+
+func ticketService(mealType domain.MealType) *domain.ClaimPreviewService {
+	service := &domain.ClaimPreviewService{Name: string(mealType)}
+	switch mealType {
+	case domain.Breakfast:
+		service.Type, service.Name = "BREAKFAST", "DESAYUNO"
+	case domain.Afternoon:
+		service.Type, service.Name = "LUNCH", "ALMUERZO"
+	case domain.Night:
+		service.Type, service.Name = "DINNER", "CENA"
+	}
+	return service
 }
 
 func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.WorkerStatus, error) {

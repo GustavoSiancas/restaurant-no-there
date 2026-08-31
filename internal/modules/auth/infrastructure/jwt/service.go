@@ -9,15 +9,14 @@ import (
 
 type Service struct {
 	secret []byte
-	ttl    time.Duration
 }
 
-func New(secret string, ttl time.Duration) *Service {
-	return &Service{secret: []byte(secret), ttl: ttl}
+func New(secret string) *Service {
+	return &Service{secret: []byte(secret)}
 }
-func (s *Service) CreateAccessToken(userID, role string) (string, error) {
+func (s *Service) CreateAccessToken(userID, role string, ttl time.Duration) (string, error) {
 	now := time.Now()
-	claims := jwt.MapClaims{"sub": userID, "role": role, "iat": now.Unix(), "exp": now.Add(s.ttl).Unix()}
+	claims := jwt.MapClaims{"sub": userID, "role": role, "iat": now.Unix(), "exp": now.Add(ttl).Unix()}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret)
 }
 func (s *Service) HashRefreshToken(token string) string {
