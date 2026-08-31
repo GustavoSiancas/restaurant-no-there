@@ -175,6 +175,16 @@ paths:
         '404': {description: Asignación no encontrada}
         '409': {description: El trabajador ya tiene otro turno en la nueva fecha}
         '423': {description: El turno ya está bloqueado por fecha}
+    delete:
+      tags: [Workforce]
+      summary: Eliminar un turno asignado
+      description: Solo ADMIN o RRHH. Puede eliminarse hasta el día anterior; desde el inicio del día del turno queda bloqueado según America/Lima.
+      security: [{bearerAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '204': {description: Asignación eliminada}
+        '404': {description: Asignación no encontrada}
+        '423': {description: El turno ya está bloqueado por fecha}
   /workers/{id}/shifts:
     get:
       tags: [Workforce]

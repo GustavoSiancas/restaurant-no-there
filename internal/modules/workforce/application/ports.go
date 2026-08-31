@@ -15,6 +15,7 @@ type Repository interface {
 	FindAssignmentByID(ctx context.Context, id string) (*domain.WorkerShiftAssignment, error)
 	FindAssignmentByWorkerAndDate(ctx context.Context, workerID string, date time.Time) (*domain.WorkerShiftAssignment, error)
 	UpdateAssignment(ctx context.Context, assignment *domain.WorkerShiftAssignment) error
+	DeleteAssignment(ctx context.Context, id string, today time.Time) error
 	ListAssignments(ctx context.Context, from, to time.Time) ([]domain.WorkerShiftAssignment, error)
 	ListWorkerAssignments(ctx context.Context, workerID, period string, today time.Time) ([]domain.WorkerShiftAssignment, error)
 	ListWorkerAssignmentsRange(ctx context.Context, workerID string, from, to time.Time) ([]domain.WorkerShiftAssignment, error)

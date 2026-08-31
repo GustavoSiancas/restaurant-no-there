@@ -118,6 +118,21 @@ func (s *Service) UpdateAssignment(ctx context.Context, id string, shiftType dom
 	return existing, nil
 }
 
+func (s *Service) DeleteAssignment(ctx context.Context, id string) error {
+	today := s.peruToday()
+	assignment, err := s.repo.FindAssignmentByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !s.peruDate(assignment.WorkDate).After(today) {
+		return fmt.Errorf("%w: shifts cannot be deleted on or after their work date", core.ErrLocked)
+	}
+	if err = s.repo.DeleteAssignment(ctx, id, today); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Service) peruToday() time.Time { return s.peruDate(s.now().In(s.peruLocation())) }
 func (s *Service) peruDate(value time.Time) time.Time {
 	location := s.peruLocation()

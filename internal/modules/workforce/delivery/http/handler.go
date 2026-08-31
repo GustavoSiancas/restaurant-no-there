@@ -127,6 +127,24 @@ func (h *Handler) UpdateAssignment(c *gin.Context) {
 	c.JSON(http.StatusOK, assignment)
 }
 
+func (h *Handler) DeleteAssignment(c *gin.Context) {
+	err := h.service.DeleteAssignment(c, c.Param("id"))
+	if err != nil {
+		status := http.StatusInternalServerError
+		message := "could not delete assignment"
+		if errors.Is(err, core.ErrNotFound) {
+			status = http.StatusNotFound
+			message = "assignment not found"
+		} else if errors.Is(err, core.ErrLocked) {
+			status = http.StatusLocked
+			message = err.Error()
+		}
+		c.JSON(status, gin.H{"error": gin.H{"code": "ASSIGNMENT_DELETE_REJECTED", "message": message}})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func writeAssignmentError(c *gin.Context, err error) {
 	var conflict *domain.AssignmentConflictError
 	if errors.As(err, &conflict) {

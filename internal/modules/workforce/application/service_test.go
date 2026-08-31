@@ -58,6 +58,10 @@ func (f *fakeRepository) UpdateAssignment(context.Context, *domain.WorkerShiftAs
 	f.created = true
 	return nil
 }
+func (f *fakeRepository) DeleteAssignment(context.Context, string, time.Time) error {
+	f.created = true
+	return nil
+}
 func (f *fakeRepository) FindAssignmentByWorkerAndDate(context.Context, string, time.Time) (*domain.WorkerShiftAssignment, error) {
 	if f.existing != nil {
 		return f.existing, nil
@@ -98,5 +102,18 @@ func TestUpdateAssignmentIsLockedOnWorkDate(t *testing.T) {
 	}
 	if repo.created {
 		t.Fatal("locked assignment must not be updated")
+	}
+}
+
+func TestDeleteAssignmentIsLockedOnWorkDate(t *testing.T) {
+	repo := &fakeRepository{existing: &domain.WorkerShiftAssignment{ID: "assignment", WorkDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}}
+	service := NewService(repo, fakeUsers{})
+	service.now = func() time.Time { return time.Date(2026, 9, 1, 0, 1, 0, 0, time.FixedZone("UTC-5", -5*60*60)) }
+	err := service.DeleteAssignment(context.Background(), "assignment")
+	if !errors.Is(err, core.ErrLocked) {
+		t.Fatalf("expected locked error, got %v", err)
+	}
+	if repo.created {
+		t.Fatal("locked assignment must not be deleted")
 	}
 }

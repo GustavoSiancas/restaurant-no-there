@@ -69,6 +69,16 @@ func (r *Repository) UpdateAssignment(ctx context.Context, a *domain.WorkerShift
 	err := r.db.QueryRow(ctx, `UPDATE worker_shift_assignments SET shift_type=$2,work_date=$3,notes=$4,updated_at=NOW() WHERE id=$1 RETURNING updated_at`, a.ID, a.ShiftType, a.WorkDate, a.Notes).Scan(&a.UpdatedAt)
 	return translate(err)
 }
+func (r *Repository) DeleteAssignment(ctx context.Context, id string, today time.Time) error {
+	result, err := r.db.Exec(ctx, `DELETE FROM worker_shift_assignments WHERE id=$1 AND work_date>$2`, id, today)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return core.ErrLocked
+	}
+	return nil
+}
 func scanAssignment(row pgx.Row) (*domain.WorkerShiftAssignment, error) {
 	var a domain.WorkerShiftAssignment
 	err := row.Scan(&a.ID, &a.WorkerID, &a.ShiftType, &a.WorkDate, &a.AssignedBy, &a.Notes, &a.CreatedAt, &a.UpdatedAt)

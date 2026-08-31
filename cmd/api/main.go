@@ -77,6 +77,7 @@ func main() {
 	protected.POST("/users/register/worker", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.RegisterWorker)
 	protected.POST("/worker-shift-assignments", authhttp.RequireRoles("ADMIN", "RRHH"), workforceHandler.AssignWorker)
 	protected.PUT("/worker-shift-assignments/:id", authhttp.RequireRoles("ADMIN", "RRHH"), workforceHandler.UpdateAssignment)
+	protected.DELETE("/worker-shift-assignments/:id", authhttp.RequireRoles("ADMIN", "RRHH"), workforceHandler.DeleteAssignment)
 	protected.GET("/worker-shift-assignments", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.ListAssignments)
 	protected.GET("/workers/:id/shifts", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.ListWorkerAssignments)
 	protected.GET("/workers/:id/shifts/range", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.ListWorkerAssignmentsRange)
