@@ -32,6 +32,9 @@ func NewBroker(allowedOrigins []string) *Broker {
 
 func (b *Broker) Serve(c *gin.Context) {
 	upgrader := websocket.Upgrader{Subprotocols: []string{"bearer"}, CheckOrigin: func(r *http.Request) bool {
+		if _, allOrigins := b.allowed["*"]; allOrigins {
+			return true
+		}
 		origin := r.Header.Get("Origin")
 		if origin == "" {
 			return true
