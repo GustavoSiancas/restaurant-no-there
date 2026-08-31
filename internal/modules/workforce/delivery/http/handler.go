@@ -35,30 +35,42 @@ type registerWorkerRequest struct {
 	Notes                 string `json:"notes"`
 }
 
-func previewQuery(c *gin.Context) (time.Time, []string, []string, int, int, error) {
+func previewQuery(c *gin.Context) (
+	time.Time,
+	[]string,
+	int,
+	int,
+	error,
+) {
 	var date time.Time
 	var err error
+
 	if value := strings.TrimSpace(c.Query("date")); value != "" {
 		date, err = time.Parse("2006-01-02", value)
 		if err != nil {
-			return date, nil, nil, 0, 0, fmt.Errorf("date must use YYYY-MM-DD")
+			return date, nil, 0, 0, fmt.Errorf("date must use YYYY-MM-DD")
 		}
 	}
+
 	page, pageSize := 1, 20
+
 	if value := c.Query("page"); value != "" {
 		page, err = strconv.Atoi(value)
 		if err != nil || page < 1 {
-			return date, nil, nil, 0, 0, fmt.Errorf("page must be positive")
+			return date, nil, 0, 0, fmt.Errorf("page must be positive")
 		}
 	}
+
 	if value := c.Query("page_size"); value != "" {
 		pageSize, err = strconv.Atoi(value)
 		if err != nil || pageSize < 1 {
-			return date, nil, nil, 0, 0, fmt.Errorf("page_size must be positive")
+			return date, nil, 0, 0, fmt.Errorf("page_size must be positive")
 		}
 	}
-	return date, c.QueryArray("meal_type"), c.QueryArray("shift_type"), page, pageSize, nil
+
+	return date, c.QueryArray("meal_type"), page, pageSize, nil
 }
+
 func (h *Handler) ShiftPreview(c *gin.Context) {
 	date, meals, page, size, err := previewQuery(c)
 	if err != nil {
