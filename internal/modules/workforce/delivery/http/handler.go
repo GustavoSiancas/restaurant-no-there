@@ -89,7 +89,7 @@ func (h *Handler) ExportShiftPreview(c *gin.Context) {
 		return
 	}
 
-	report, err := h.service.ShiftPreview(
+	report, err := h.service.ShiftPreview(	
 		c,
 		date,
 		meals,
