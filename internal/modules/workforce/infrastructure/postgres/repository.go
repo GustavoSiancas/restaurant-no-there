@@ -143,26 +143,73 @@ func (r *Repository) ListWorkerAssignmentsRange(ctx context.Context, workerID st
 	return items, rows.Err()
 }
 
-func (r *Repository) ListShiftPreview(ctx context.Context, date time.Time, shiftTypes []string) ([]domain.ShiftPreviewRow, error) {
-	rows, err := r.db.Query(ctx, `SELECT a.id,a.shift_type,a.work_date,BTRIM(p.first_name||' '||p.last_name),
-		REPEAT('*',GREATEST(LENGTH(dni.identifier)-4,0))||RIGHT(dni.identifier,4),wi.employee_code,wi.job_title,wi.department
-		FROM worker_shift_assignments a JOIN user_profiles p ON p.user_id=a.worker_id
-		JOIN worker_information wi ON wi.user_id=a.worker_id
-		JOIN user_credentials dni ON dni.user_id=a.worker_id AND dni.type='DNI' AND dni.active=TRUE
-		WHERE a.work_date=$1 AND (cardinality($2::text[])=0 OR a.shift_type::text=ANY($2::text[]))
-		ORDER BY p.first_name,p.last_name`, date, shiftTypes)
+func (r *Repository) ListShiftPreview(
+	ctx context.Context,
+	date time.Time,
+) ([]domain.ShiftPreviewRow, error) {
+
+	rows, err := r.db.Query(
+		ctx,
+		`
+		SELECT
+			a.id,
+			a.shift_type,
+			a.work_date,
+			BTRIM(p.first_name || ' ' || p.last_name),
+			REPEAT('*', GREATEST(LENGTH(dni.identifier) - 4, 0))
+				|| RIGHT(dni.identifier, 4),
+			wi.employee_code,
+			wi.job_title,
+			wi.department
+		FROM worker_shift_assignments a
+
+		JOIN user_profiles p
+			ON p.user_id = a.worker_id
+
+		JOIN worker_information wi
+			ON wi.user_id = a.worker_id
+
+		JOIN user_credentials dni
+			ON dni.user_id = a.worker_id
+			AND dni.type = 'DNI'
+			AND dni.active = TRUE
+
+		WHERE a.work_date = $1
+
+		ORDER BY
+			p.first_name,
+			p.last_name
+		`,
+		date,
+	)
+
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
+
 	items := make([]domain.ShiftPreviewRow, 0)
+
 	for rows.Next() {
 		var item domain.ShiftPreviewRow
-		if err = rows.Scan(&item.AssignmentID, &item.ShiftType, &item.WorkDate, &item.Worker.FullName, &item.Worker.DocumentNumber, &item.Worker.EmployeeCode, &item.Worker.JobTitle, &item.Worker.Department); err != nil {
+
+		if err = rows.Scan(
+			&item.AssignmentID,
+			&item.ShiftType,
+			&item.WorkDate,
+			&item.Worker.FullName,
+			&item.Worker.DocumentNumber,
+			&item.Worker.EmployeeCode,
+			&item.Worker.JobTitle,
+			&item.Worker.Department,
+		); err != nil {
 			return nil, err
 		}
+
 		items = append(items, item)
 	}
+
 	return items, rows.Err()
 }
 

@@ -257,7 +257,7 @@ func (s *Service) ShiftPreview(
 	//
 	// Si acá rows=0, el problema está en el repository.
 	// ============================================================
-	rows, err := s.repo.ListShiftPreview(ctx, date, nil)
+	rows, err := s.repo.ListShiftPreview(ctx, date)
 	if err != nil {
 		fmt.Printf(
 			"[SHIFT_PREVIEW] ERROR ListShiftPreview date=%s err=%v\n",
