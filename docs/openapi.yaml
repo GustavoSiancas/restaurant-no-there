@@ -350,8 +350,6 @@ paths:
       responses:
         '200':
           description: Vista previa de turnos
-
-
   /workforce/shift-preview/export.xlsx:
     get:
       tags: [Workforce]
@@ -367,7 +365,6 @@ paths:
           description: Archivo XLSX
           content:
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: {}
-
   /ws/meal-orders:
     get:
       tags: [Meals]
