@@ -15,6 +15,7 @@ type fakeMealsRepository struct {
 	eligible bool
 	rules    []domain.ServiceRule
 	claim    *domain.Claim
+	closed   []domain.MealType
 }
 
 func (f *fakeMealsRepository) FindRule(context.Context, domain.MealType) (*domain.ServiceRule, error) {
@@ -46,6 +47,25 @@ func (f *fakeMealsRepository) CreateClaim(_ context.Context, c *domain.Claim) er
 	c.ID = "claim"
 	return nil
 }
+func (f *fakeMealsRepository) ListOrders(context.Context, domain.ClaimStatus) ([]domain.MealOrder, error) {
+	return nil, nil
+}
+func (f *fakeMealsRepository) FindOrderByID(context.Context, string) (*domain.MealOrder, error) {
+	return nil, core.ErrNotFound
+}
+func (f *fakeMealsRepository) ValidateOrder(context.Context, string, string, time.Time) (*domain.MealOrder, error) {
+	return nil, core.ErrNotFound
+}
+func (f *fakeMealsRepository) CreateNotClaimed(_ context.Context, mealType domain.MealType, _ time.Time, _ time.Time) (int64, error) {
+	f.closed = append(f.closed, mealType)
+	return 1, nil
+}
+func (f *fakeMealsRepository) DetailedReportSummary(context.Context, domain.ReportFilters) (domain.DetailedReportSummary, error) {
+	return domain.DetailedReportSummary{}, nil
+}
+func (f *fakeMealsRepository) DetailedReportRows(context.Context, domain.ReportFilters, int, int) ([]domain.DetailedReportRow, error) {
+	return nil, nil
+}
 func (f *fakeMealsRepository) Report(context.Context, time.Time, time.Time) ([]domain.ReportRow, error) {
 	return nil, nil
 }
@@ -73,6 +93,23 @@ func TestClaimRejectsOutsideMealWindow(t *testing.T) {
 	}
 	if repo.created {
 		t.Fatal("claim outside the window must not be created")
+	}
+}
+
+func TestSchedulerClosesOnlyExpiredWindows(t *testing.T) {
+	repo := &fakeMealsRepository{rules: []domain.ServiceRule{
+		{MealType: domain.Breakfast, ClaimEnd: "10:00:00", Active: true},
+		{MealType: domain.Afternoon, ClaimEnd: "15:00:00", Active: true},
+		{MealType: domain.Night, ClaimEnd: "22:00:00", Active: true},
+	}}
+	service := NewService(repo)
+	service.now = func() time.Time { return time.Date(2026, 8, 31, 13, 0, 0, 0, time.FixedZone("UTC-5", -5*60*60)) }
+	created, err := service.CloseExpiredMealWindows(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if created != 1 || len(repo.closed) != 1 || repo.closed[0] != domain.Breakfast {
+		t.Fatalf("expected only breakfast to close, got %v", repo.closed)
 	}
 }
 

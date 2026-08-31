@@ -52,6 +52,20 @@ func (h *Handler) RegisterManagement(c *gin.Context) {
 	c.JSON(http.StatusCreated, u)
 }
 
+func (h *Handler) RegisterCollaborator(c *gin.Context) {
+	var r managementRegisterRequest
+	if c.ShouldBindJSON(&r) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+	u, err := h.service.Register(c, application.RegisterInput{Username: r.Username, Email: r.Email, Password: r.Password, FirstName: r.FirstName, LastName: r.LastName, Role: domain.RoleCollaborator})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, u)
+}
+
 func (h *Handler) List(c *gin.Context) {
 	users, err := h.service.List(c)
 	if err != nil {
@@ -96,6 +110,15 @@ func (h *Handler) Management(c *gin.Context) {
 	users, err := h.service.ListByRoles(c, domain.RoleOwner, domain.RoleRRHH)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list management users"})
+		return
+	}
+	c.JSON(http.StatusOK, users)
+}
+
+func (h *Handler) Collaborators(c *gin.Context) {
+	users, err := h.service.ListByRoles(c, domain.RoleCollaborator)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list collaborators"})
 		return
 	}
 	c.JSON(http.StatusOK, users)

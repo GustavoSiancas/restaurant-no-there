@@ -25,6 +25,32 @@ func RequireAuth(jwt *jwtinfra.Service) gin.HandlerFunc {
 	}
 }
 
+// RequireWebSocketAuth accepts the normal Bearer header and, for browser
+// WebSocket clients that cannot set it, an access_token query parameter.
+func RequireWebSocketAuth(jwt *jwtinfra.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := ""
+		header := c.GetHeader("Authorization")
+		if strings.HasPrefix(header, "Bearer ") {
+			token = strings.TrimPrefix(header, "Bearer ")
+		} else {
+			token = c.Query("access_token")
+		}
+		if token == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "access token required"})
+			return
+		}
+		claims, err := jwt.Parse(token)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+			return
+		}
+		c.Set("user_id", claims["sub"])
+		c.Set("role", claims["role"])
+		c.Next()
+	}
+}
+
 func RequireRoles(roles ...string) gin.HandlerFunc {
 	allowed := make(map[string]struct{}, len(roles))
 	for _, role := range roles {

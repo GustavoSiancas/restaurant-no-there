@@ -15,5 +15,11 @@ type Repository interface {
 	FindClaim(ctx context.Context, workerID string, mealType domain.MealType, serviceDate time.Time) (*domain.Claim, error)
 	FindWorkerTicketIdentity(ctx context.Context, workerID string) (*domain.WorkerTicketIdentity, error)
 	CreateClaim(ctx context.Context, claim *domain.Claim) error
+	ListOrders(ctx context.Context, status domain.ClaimStatus) ([]domain.MealOrder, error)
+	FindOrderByID(ctx context.Context, id string) (*domain.MealOrder, error)
+	ValidateOrder(ctx context.Context, id, validatedBy string, validatedAt time.Time) (*domain.MealOrder, error)
+	CloseMealWindow(ctx context.Context, mealType domain.MealType, serviceDate, closedAt time.Time) (domain.MealWindowClosure, error)
+	DetailedReportSummary(ctx context.Context, filters domain.ReportFilters) (domain.DetailedReportSummary, error)
+	DetailedReportRows(ctx context.Context, filters domain.ReportFilters, limit, offset int) ([]domain.DetailedReportRow, error)
 	Report(ctx context.Context, from, to time.Time) ([]domain.ReportRow, error)
 }

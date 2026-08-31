@@ -8,14 +8,15 @@ import (
 type Role string
 
 const (
-	RoleAdmin  Role = "ADMIN"
-	RoleOwner  Role = "OWNER"
-	RoleRRHH   Role = "RRHH"
-	RoleWorker Role = "WORKER"
+	RoleAdmin        Role = "ADMIN"
+	RoleOwner        Role = "OWNER"
+	RoleRRHH         Role = "RRHH"
+	RoleWorker       Role = "WORKER"
+	RoleCollaborator Role = "COLLABORATOR"
 )
 
 func (r Role) Valid() bool {
-	return r == RoleAdmin || r == RoleOwner || r == RoleRRHH || r == RoleWorker
+	return r == RoleAdmin || r == RoleOwner || r == RoleRRHH || r == RoleWorker || r == RoleCollaborator
 }
 
 type User struct {

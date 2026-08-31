@@ -53,7 +53,7 @@ func (s *Service) Claim(ctx context.Context, workerID string, mealType domain.Me
 	if err != nil {
 		return nil, fmt.Errorf("worker is not eligible for %s on this date", mealType)
 	}
-	claim := &domain.Claim{WorkerID: workerID, ShiftAssignmentID: assignmentID, MealType: mealType, ServiceDate: serviceDate, ClaimedAt: now, Notes: optional(notes)}
+	claim := &domain.Claim{WorkerID: workerID, ShiftAssignmentID: assignmentID, MealType: mealType, ServiceDate: serviceDate, ClaimedAt: &now, Notes: optional(notes)}
 	if err = s.repo.CreateClaim(ctx, claim); err != nil {
 		return nil, err
 	}
@@ -87,6 +87,132 @@ func (s *Service) Report(ctx context.Context, from, to time.Time) ([]domain.Repo
 
 func (s *Service) ListSchedules(ctx context.Context) ([]domain.ServiceRule, error) {
 	return s.repo.ListRules(ctx)
+}
+
+func (s *Service) CloseExpiredMealWindows(ctx context.Context, lookbackDays int) (int64, error) {
+	if lookbackDays < 0 {
+		return 0, fmt.Errorf("lookback days cannot be negative")
+	}
+	now := s.now().In(s.peruLocation())
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	rules, err := s.repo.ListRules(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var created int64
+	for daysAgo := lookbackDays; daysAgo >= 0; daysAgo-- {
+		serviceDate := today.AddDate(0, 0, -daysAgo)
+		for _, rule := range rules {
+			windowEnd, parseErr := parseRuleTime(serviceDate, rule.ClaimEnd)
+			if parseErr != nil {
+				return created, parseErr
+			}
+			if now.Before(windowEnd) {
+				continue
+			}
+			inserted, createErr := s.repo.CreateNotClaimed(ctx, rule.MealType, serviceDate, now)
+			if createErr != nil {
+				return created, createErr
+			}
+			created += inserted
+		}
+	}
+	return created, nil
+}
+
+func (s *Service) DetailedReport(ctx context.Context, filters domain.ReportFilters, page, pageSize int, paginate bool) (*domain.DetailedReport, error) {
+	now := s.now().In(s.peruLocation())
+	yesterday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.peruLocation()).AddDate(0, 0, -1)
+	if filters.From.IsZero() && filters.To.IsZero() {
+		filters.From, filters.To = yesterday, yesterday
+	} else if filters.From.IsZero() {
+		filters.From = filters.To
+	} else if filters.To.IsZero() {
+		filters.To = filters.From
+	}
+	filters.From = time.Date(filters.From.Year(), filters.From.Month(), filters.From.Day(), 0, 0, 0, 0, s.peruLocation())
+	filters.To = time.Date(filters.To.Year(), filters.To.Month(), filters.To.Day(), 0, 0, 0, 0, s.peruLocation())
+	if filters.To.Before(filters.From) {
+		return nil, fmt.Errorf("to must be on or after from")
+	}
+	if filters.MealType != "" && !filters.MealType.Valid() {
+		return nil, fmt.Errorf("meal_type must be DESAYUNO, TARDE or NOCHE")
+	}
+	if filters.ShiftType != "" && filters.ShiftType != "DIA" && filters.ShiftType != "NOCHE" {
+		return nil, fmt.Errorf("shift_type must be DIA or NOCHE")
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	summary, err := s.repo.DetailedReportSummary(ctx, filters)
+	if err != nil {
+		return nil, err
+	}
+	limit, offset := 0, 0
+	if paginate {
+		limit, offset = pageSize, (page-1)*pageSize
+	}
+	rows, err := s.repo.DetailedReportRows(ctx, filters, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	totalPages := 0
+	if summary.TotalEligible > 0 {
+		totalPages = int((summary.TotalEligible + int64(pageSize) - 1) / int64(pageSize))
+	}
+	return &domain.DetailedReport{Filters: filters, Summary: summary, Data: rows, Page: page, PageSize: pageSize, Total: summary.TotalEligible, TotalPages: totalPages}, nil
+}
+
+func (s *Service) ListOrders(ctx context.Context, status domain.ClaimStatus) ([]domain.MealOrder, error) {
+	if status == "" {
+		status = domain.ClaimPending
+	}
+	if status != domain.ClaimPending && status != domain.ClaimValidated {
+		return nil, fmt.Errorf("status must be PENDING or VALIDATED")
+	}
+	return s.repo.ListOrders(ctx, status)
+}
+
+func (s *Service) FindOrder(ctx context.Context, id string) (*domain.MealOrder, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, fmt.Errorf("order id is required")
+	}
+	return s.repo.FindOrderByID(ctx, id)
+}
+
+func (s *Service) ValidateOrder(ctx context.Context, id, collaboratorID string) (*domain.MealOrder, error) {
+	order, err := s.repo.ValidateOrder(ctx, id, collaboratorID, s.now().In(s.peruLocation()))
+	if err == nil {
+		return order, nil
+	}
+	if !errors.Is(err, core.ErrNotFound) {
+		return nil, err
+	}
+	existing, findErr := s.repo.FindOrderByID(ctx, id)
+	if findErr != nil {
+		return nil, findErr
+	}
+	if existing.Status == domain.ClaimValidated {
+		return existing, fmt.Errorf("%w: order was already validated", core.ErrConflict)
+	}
+	if existing.Status == domain.ClaimNotClaimed {
+		return existing, fmt.Errorf("%w: NOT_CLAIMED records cannot be validated", core.ErrConflict)
+	}
+	return existing, core.ErrNotFound
+}
+
+func (s *Service) peruLocation() *time.Location {
+	location, err := time.LoadLocation("America/Lima")
+	if err != nil {
+		return time.FixedZone("America/Lima", -5*60*60)
+	}
+	return location
 }
 
 func (s *Service) ClaimPreview(ctx context.Context, workerID string) (*domain.ClaimPreview, error) {
@@ -166,10 +292,7 @@ func ticketService(mealType domain.MealType) *domain.ClaimPreviewService {
 }
 
 func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.WorkerStatus, error) {
-	location, err := time.LoadLocation("America/Lima")
-	if err != nil {
-		location = time.FixedZone("America/Lima", -5*60*60)
-	}
+	location := s.peruLocation()
 	now := s.now().In(location)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
 	status := &domain.WorkerStatus{PeruTime: now}

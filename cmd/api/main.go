@@ -35,7 +35,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ctx := context.Background()
+	ctx, cancelApp := context.WithCancel(context.Background())
+	defer cancelApp()
 	db, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal(err)
@@ -59,7 +60,10 @@ func main() {
 	usersHandler := userhttp.New(userapp.NewService(usersRepo))
 	authHandler := authhttp.New(authapp.NewService(usersRepo, tokensRepo, jwtService, cfg.AccessTTL, cfg.WorkerAccessTTL, cfg.RefreshTTL))
 	workforceHandler := workforcehttp.New(workforceapp.NewService(workforcepg.New(db), usersRepo, clock))
-	mealHandler := mealhttp.New(mealapp.NewService(mealpg.New(db), clock))
+	mealBroker := mealhttp.NewBroker(cfg.AllowedOrigins)
+	mealService := mealapp.NewService(mealpg.New(db), clock)
+	mealHandler := mealhttp.New(mealService, mealBroker)
+	go runMealScheduler(ctx, mealService, cfg.MealSchedulerInterval, cfg.MealSchedulerLookback)
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.AllowedOrigins,
@@ -80,6 +84,7 @@ func main() {
 	protected := v1.Group("")
 	protected.Use(authhttp.RequireAuth(jwtService))
 	protected.POST("/users/register/management", authhttp.RequireRoles("ADMIN"), usersHandler.RegisterManagement)
+	protected.POST("/users/register/collaborator", authhttp.RequireRoles("OWNER"), usersHandler.RegisterCollaborator)
 	protected.POST("/users/register/worker", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.RegisterWorker)
 	protected.POST("/worker-shift-assignments", authhttp.RequireRoles("ADMIN", "RRHH"), workforceHandler.AssignWorker)
 	protected.PUT("/worker-shift-assignments/:id", authhttp.RequireRoles("ADMIN", "RRHH"), workforceHandler.UpdateAssignment)
@@ -90,14 +95,21 @@ func main() {
 	protected.GET("/workers/my/shifts/range", authhttp.RequireRoles("WORKER"), workforceHandler.ListMyAssignmentsRange)
 	protected.GET("/meal-claims/my/preview", authhttp.RequireRoles("WORKER"), mealHandler.ClaimPreview)
 	protected.POST("/meal-claims/my/confirm-print", authhttp.RequireRoles("WORKER"), mealHandler.ConfirmPrint)
+	protected.GET("/meal-orders", authhttp.RequireRoles("COLLABORATOR", "OWNER"), mealHandler.ListOrders)
+	protected.GET("/meal-orders/:id", authhttp.RequireRoles("COLLABORATOR", "OWNER"), mealHandler.GetOrder)
+	protected.PATCH("/meal-orders/:id/validate", authhttp.RequireRoles("COLLABORATOR"), mealHandler.ValidateOrder)
+	protected.GET("/meal-reports/daily", authhttp.RequireRoles("OWNER", "RRHH"), mealHandler.DetailedReport)
+	protected.GET("/meal-reports/export.xlsx", authhttp.RequireRoles("OWNER", "RRHH"), mealHandler.ExportDetailedReport)
 	protected.GET("/meal-schedules", mealHandler.ListSchedules)
 	protected.GET("/workers/my/status", authhttp.RequireRoles("WORKER"), mealHandler.WorkerStatus)
 	protected.GET("/meal-claims/report", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), mealHandler.Report)
 	protected.GET("/users/my", usersHandler.My)
 	protected.GET("/users/workers", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), usersHandler.Workers)
 	protected.GET("/users/management", authhttp.RequireRoles("ADMIN"), usersHandler.Management)
+	protected.GET("/users/collaborators", authhttp.RequireRoles("OWNER"), usersHandler.Collaborators)
 	protected.GET("/users", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), usersHandler.List)
 	protected.GET("/users/:id", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), usersHandler.Get)
+	v1.GET("/ws/meal-orders", authhttp.RequireWebSocketAuth(jwtService), authhttp.RequireRoles("COLLABORATOR", "OWNER"), mealHandler.OrdersWebSocket)
 	server := &http.Server{Addr: ":" + cfg.Port, Handler: r, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Printf("API http://localhost:%s | Swagger http://localhost:%s/swagger/index.html", cfg.Port, cfg.Port)
@@ -108,7 +120,34 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
+	cancelApp()
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = server.Shutdown(shutdown)
+}
+
+func runMealScheduler(ctx context.Context, service *mealapp.Service, interval time.Duration, lookbackDays int) {
+	run := func() {
+		created, err := service.CloseExpiredMealWindows(ctx, lookbackDays)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Printf("meal scheduler error: %v", err)
+			}
+			return
+		}
+		if created > 0 {
+			log.Printf("meal scheduler created %d NOT_CLAIMED records", created)
+		}
+	}
+	run()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
 }

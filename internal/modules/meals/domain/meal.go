@@ -3,11 +3,19 @@ package domain
 import "time"
 
 type MealType string
+type ClaimStatus string
 
 const (
 	Breakfast MealType = "DESAYUNO"
 	Afternoon MealType = "TARDE"
 	Night     MealType = "NOCHE"
+)
+
+const (
+	ClaimRequested                ClaimStatus = "REQUESTED"
+	ClaimValidated                ClaimStatus = "VALIDATED"
+	ClaimNotConsumed              ClaimStatus = "NOT_CONSUMED"
+	ClaimRequestedNotValidated    ClaimStatus = "REQUESTED_BUT_NOT_VALIDATED"
 )
 
 func (m MealType) Valid() bool { return m == Breakfast || m == Afternoon || m == Night }
@@ -22,15 +30,24 @@ type ServiceRule struct {
 }
 
 type Claim struct {
-	ID                string    `json:"id"`
-	WorkerID          string    `json:"worker_id"`
-	ShiftAssignmentID string    `json:"shift_assignment_id"`
-	MealType          MealType  `json:"meal_type"`
-	ServiceDate       time.Time `json:"service_date"`
-	ClaimedAt         time.Time `json:"claimed_at"`
-	Notes             *string   `json:"notes,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                string      `json:"id"`
+	WorkerID          string      `json:"worker_id"`
+	ShiftAssignmentID string      `json:"shift_assignment_id"`
+	MealType          MealType    `json:"meal_type"`
+	ServiceDate       time.Time   `json:"service_date"`
+	ClaimedAt         *time.Time  `json:"claimed_at,omitempty"`
+	Status            ClaimStatus `json:"status"`
+	ValidatedAt       *time.Time  `json:"validated_at,omitempty"`
+	ValidatedBy       *string     `json:"validated_by,omitempty"`
+	Notes             *string     `json:"notes,omitempty"`
+	CreatedAt         time.Time   `json:"created_at"`
+	UpdatedAt         time.Time   `json:"updated_at"`
+}
+
+type MealOrder struct {
+	Claim
+	Worker  ClaimPreviewWorker  `json:"worker"`
+	Service ClaimPreviewService `json:"service"`
 }
 
 type ReportRow struct {
@@ -38,6 +55,51 @@ type ReportRow struct {
 	Eligible   int64    `json:"eligible"`
 	Claimed    int64    `json:"claimed"`
 	NotClaimed int64    `json:"not_claimed"`
+}
+
+type ReportFilters struct {
+	From      time.Time `json:"from"`
+	To        time.Time `json:"to"`
+	MealType  MealType  `json:"meal_type,omitempty"`
+	ShiftType string    `json:"shift_type,omitempty"`
+}
+
+type DetailedReportRow struct {
+	ID             string      `json:"id"`
+	ServiceDate    time.Time   `json:"service_date"`
+	MealType       MealType    `json:"meal_type"`
+	ShiftType      string      `json:"shift_type"`
+	Status         ClaimStatus `json:"status"`
+	ClaimedAt      *time.Time  `json:"claimed_at,omitempty"`
+	ValidatedAt    *time.Time  `json:"validated_at,omitempty"`
+	WorkerID       string      `json:"worker_id"`
+	FullName       string      `json:"full_name"`
+	DocumentNumber string      `json:"document_number"`
+	EmployeeCode   string      `json:"employee_code"`
+	Department     *string     `json:"department,omitempty"`
+}
+
+type DetailedReportSummary struct {
+	TotalEligible         int64 `json:"total_eligible"`
+	Consumed              int64 `json:"consumed"`
+	RequestedNotValidated int64 `json:"requested_not_validated"`
+	NotClaimed            int64 `json:"not_claimed"`
+	DidNotConsume         int64 `json:"did_not_consume"`
+}
+
+type DetailedReport struct {
+	Filters    ReportFilters         `json:"filters"`
+	Summary    DetailedReportSummary `json:"summary"`
+	Data       []DetailedReportRow   `json:"data"`
+	Page       int                   `json:"page"`
+	PageSize   int                   `json:"page_size"`
+	Total      int64                 `json:"total"`
+	TotalPages int                   `json:"total_pages"`
+}
+
+type MealWindowClosure struct {
+	NotConsumed          int64 `json:"not_consumed"`
+	RequestedNotValidated int64 `json:"requested_but_not_validated"`
 }
 
 type CurrentShift struct {

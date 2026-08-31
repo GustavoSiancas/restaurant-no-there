@@ -61,10 +61,36 @@ paths:
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /users/register/collaborator:
+    post:
+      tags: [Users]
+      summary: Registrar un COLLABORATOR
+      description: Solo OWNER. Crea un ayudante que puede recibir y validar pedidos de comida.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CollaboratorRegisterRequest'}
+      responses:
+        '201': {description: Colaborador creado, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /users/collaborators:
+    get:
+      tags: [Users]
+      summary: Listar colaboradores
+      description: Solo OWNER.
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Colaboradores, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MyUser'}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /auth/login/password:
     post:
       tags: [Auth]
-      summary: Login de ADMIN, OWNER o RRHH
+      summary: Login de ADMIN, OWNER, RRHH o COLLABORATOR
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PasswordLogin'}}}}
       responses:
         '200': {description: Tokens, content: {application/json: {schema: {$ref: '#/components/schemas/TokenPair'}}}}
@@ -284,6 +310,86 @@ paths:
         - {name: to, in: query, required: true, schema: {type: string, format: date}}
       responses:
         '200': {description: Totales por tipo de comida, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MealReportRow'}}}}}
+  /meal-orders:
+    get:
+      tags: [Meals]
+      summary: Listar pedidos de comida
+      description: COLLABORATOR y OWNER. Por defecto devuelve PENDING; la lista pendiente deja de incluir un pedido apenas otro colaborador lo valida.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: status, in: query, required: false, schema: {type: string, enum: [PENDING, VALIDATED], default: PENDING}}
+      responses:
+        '200': {description: Pedidos, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MealOrder'}}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /meal-reports/daily:
+    get:
+      tags: [Meals]
+      summary: Reporte paginado de alimentación
+      description: OWNER y RRHH. Sin filtros devuelve el día anterior en hora Perú. Distingue consumidos, pedidos sin validar y no reclamados.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: from, in: query, required: false, schema: {type: string, format: date}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date}}
+        - {name: meal_type, in: query, required: false, schema: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}}
+        - {name: shift_type, in: query, required: false, schema: {type: string, enum: [DIA, NOCHE]}}
+        - {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: page_size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200': {description: Reporte paginado, content: {application/json: {schema: {$ref: '#/components/schemas/DetailedMealReport'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /meal-reports/export.xlsx:
+    get:
+      tags: [Meals]
+      summary: Exportar reporte de alimentación a Excel
+      description: OWNER y RRHH. Aplica from, to, meal_type y shift_type; sin filtros exporta el día anterior completo.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: from, in: query, required: false, schema: {type: string, format: date}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date}}
+        - {name: meal_type, in: query, required: false, schema: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}}
+        - {name: shift_type, in: query, required: false, schema: {type: string, enum: [DIA, NOCHE]}}
+      responses:
+        '200':
+          description: Archivo Excel con hojas Resumen y Detalle
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: {type: string, format: binary}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /meal-orders/{id}:
+    get:
+      tags: [Meals]
+      summary: Buscar un pedido por UUID
+      description: COLLABORATOR y OWNER. Si ya se entregó devuelve status VALIDATED y la hora de validación.
+      security: [{bearerAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Pedido, content: {application/json: {schema: {$ref: '#/components/schemas/MealOrder'}}}}
+        '404': {description: Pedido inexistente}
+  /meal-orders/{id}/validate:
+    patch:
+      tags: [Meals]
+      summary: Entregar y validar un pedido
+      description: Solo COLLABORATOR. La transición PENDING a VALIDATED es atómica.
+      security: [{bearerAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Pedido validado, content: {application/json: {schema: {$ref: '#/components/schemas/MealOrder'}}}}
+        '404': {description: Pedido inexistente}
+        '409': {description: El pedido ya fue validado por otro colaborador}
+  /ws/meal-orders:
+    get:
+      tags: [Meals]
+      summary: WebSocket de pedidos en vivo
+      description: COLLABORATOR y OWNER. En navegador usar ws://localhost:8080/api/v1/ws/meal-orders?access_token=JWT. Emite MEAL_ORDER_CREATED y MEAL_ORDER_VALIDATED.
+      parameters:
+        - {name: access_token, in: query, required: false, schema: {type: string}}
+      responses:
+        '101': {description: WebSocket conectado}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
@@ -311,6 +417,15 @@ components:
         first_name: {type: string}
         last_name: {type: string}
         role: {type: string, enum: [OWNER, RRHH]}
+    CollaboratorRegisterRequest:
+      type: object
+      required: [username, password, first_name, last_name]
+      properties:
+        username: {type: string, example: ayudante1}
+        password: {type: string, minLength: 8}
+        email: {type: string, format: email}
+        first_name: {type: string}
+        last_name: {type: string}
     WorkerRegisterRequest:
       type: object
       required: [dni, first_name, last_name, employee_code]
@@ -449,7 +564,26 @@ components:
         meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
         service_date: {type: string, format: date}
         claimed_at: {type: string, format: date-time}
+        status: {type: string, enum: [PENDING, VALIDATED, NOT_CLAIMED]}
+        validated_at: {type: string, format: date-time}
+        validated_by: {type: string, format: uuid}
         notes: {type: string}
+    MealOrder:
+      allOf:
+        - {$ref: '#/components/schemas/MealClaim'}
+        - type: object
+          properties:
+            worker:
+              type: object
+              properties:
+                id: {type: string, format: uuid}
+                fullName: {type: string}
+                documentNumber: {type: string, example: '****5678'}
+            service:
+              type: object
+              properties:
+                type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
+                name: {type: string, enum: [DESAYUNO, ALMUERZO, CENA]}
     MealReportRow:
       type: object
       properties:
@@ -457,6 +591,46 @@ components:
         eligible: {type: integer}
         claimed: {type: integer}
         not_claimed: {type: integer}
+    DetailedMealReport:
+      type: object
+      properties:
+        filters:
+          type: object
+          properties:
+            from: {type: string, format: date-time}
+            to: {type: string, format: date-time}
+            meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+            shift_type: {type: string, enum: [DIA, NOCHE]}
+        summary:
+          type: object
+          properties:
+            total_eligible: {type: integer}
+            consumed: {type: integer, description: Pedidos VALIDATED}
+            requested_not_validated: {type: integer, description: Pedidos PENDING}
+            not_claimed: {type: integer, description: Registros NOT_CLAIMED}
+            did_not_consume: {type: integer, description: PENDING más NOT_CLAIMED}
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/DetailedMealReportRow'}
+        page: {type: integer}
+        page_size: {type: integer}
+        total: {type: integer}
+        total_pages: {type: integer}
+    DetailedMealReportRow:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        service_date: {type: string, format: date-time}
+        meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+        shift_type: {type: string, enum: [DIA, NOCHE]}
+        status: {type: string, enum: [PENDING, VALIDATED, NOT_CLAIMED]}
+        claimed_at: {type: string, format: date-time}
+        validated_at: {type: string, format: date-time}
+        worker_id: {type: string, format: uuid}
+        full_name: {type: string}
+        document_number: {type: string, example: '****5678'}
+        employee_code: {type: string}
+        department: {type: string}
     PasswordLogin:
       type: object
       required: [username, password]
@@ -487,7 +661,7 @@ components:
       type: object
       properties:
         id: {type: string, format: uuid}
-        role: {type: string, enum: [ADMIN, OWNER, RRHH, WORKER]}
+        role: {type: string, enum: [ADMIN, OWNER, RRHH, WORKER, COLLABORATOR]}
         active: {type: boolean}
     MyUser:
       allOf:

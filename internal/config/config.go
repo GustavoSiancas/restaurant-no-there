@@ -10,14 +10,16 @@ import (
 )
 
 type Config struct {
-	Port            string
-	DatabaseURL     string
-	JWTSecret       string
-	AccessTTL       time.Duration
-	WorkerAccessTTL time.Duration
-	RefreshTTL      time.Duration
-	AllowedOrigins  []string
-	FixedTime       *time.Time
+	Port                  string
+	DatabaseURL           string
+	JWTSecret             string
+	AccessTTL             time.Duration
+	WorkerAccessTTL       time.Duration
+	RefreshTTL            time.Duration
+	AllowedOrigins        []string
+	FixedTime             *time.Time
+	MealSchedulerInterval time.Duration
+	MealSchedulerLookback int
 }
 
 func Load() (Config, error) {
@@ -39,6 +41,12 @@ func Load() (Config, error) {
 	}
 	if c.RefreshTTL, err = time.ParseDuration(env("REFRESH_TOKEN_TTL", "168h")); err != nil || c.RefreshTTL <= 0 {
 		return c, fmt.Errorf("REFRESH_TOKEN_TTL must be a positive Go duration, for example 168h")
+	}
+	if c.MealSchedulerInterval, err = time.ParseDuration(env("MEAL_SCHEDULER_INTERVAL", "1m")); err != nil || c.MealSchedulerInterval <= 0 {
+		return c, fmt.Errorf("MEAL_SCHEDULER_INTERVAL must be a positive Go duration, for example 1m")
+	}
+	if _, err = fmt.Sscan(env("MEAL_SCHEDULER_LOOKBACK_DAYS", "30"), &c.MealSchedulerLookback); err != nil || c.MealSchedulerLookback < 0 {
+		return c, fmt.Errorf("MEAL_SCHEDULER_LOOKBACK_DAYS must be zero or a positive integer")
 	}
 	if value := strings.TrimSpace(os.Getenv("APP_FIXED_TIME")); value != "" {
 		fixedTime, err := time.Parse(time.RFC3339, value)

@@ -31,7 +31,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*domain.User,
 		return nil, fmt.Errorf("WORKER registration belongs to workforce service")
 	}
 	if strings.TrimSpace(in.Username) == "" || len(in.Password) < 8 || strings.TrimSpace(in.DNI) != "" {
-		return nil, fmt.Errorf("ADMIN, OWNER and RRHH require username and password (minimum 8 characters), without dni")
+		return nil, fmt.Errorf("management users require username and password (minimum 8 characters), without dni")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 	if err != nil {
