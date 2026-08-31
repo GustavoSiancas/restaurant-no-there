@@ -151,7 +151,7 @@ paths:
     post:
       tags: [Workforce]
       summary: Agendar un trabajador en un turno
-      description: Solo ADMIN o RRHH. Un trabajador puede tener como máximo un turno por fecha y debe agendarse al menos un día antes.
+      description: Solo ADMIN o RRHH. Máximo un turno por trabajador y fecha. Solo se pueden crear o modificar turnos de la semana siguiente.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
@@ -166,7 +166,7 @@ paths:
     put:
       tags: [Workforce]
       summary: Modificar un turno asignado
-      description: Solo ADMIN o RRHH. Puede modificarse hasta el día anterior; en la fecha del turno queda bloqueado según America/Lima.
+      description: Solo ADMIN o RRHH. Solo se pueden modificar turnos de la semana siguiente.
       security: [{bearerAuth: []}]
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
       requestBody:

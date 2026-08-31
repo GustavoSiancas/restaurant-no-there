@@ -60,8 +60,8 @@ func (s *Service) AssignWorker(ctx context.Context, workerID string, shiftType d
 		return nil, fmt.Errorf("work_date is required")
 	}
 	date = s.peruDate(date)
-	if !date.After(s.peruToday()) {
-		return nil, fmt.Errorf("work_date must be at least one day in advance")
+	if !CanManageAssignmentForDate(date, s.peruToday()) {
+		return nil, ErrAssignmentOutsideAllowedWeek
 	}
 	worker, err := s.users.FindByID(ctx, workerID)
 	if err != nil || worker.Role != userdomain.RoleWorker || !worker.Active {
@@ -98,15 +98,21 @@ func (s *Service) UpdateAssignment(ctx context.Context, id string, shiftType dom
 	}
 	today := s.peruToday()
 	date = s.peruDate(date)
+
 	existing, err := s.repo.FindAssignmentByID(ctx, id)
+	
 	if err != nil {
 		return nil, err
 	}
-	if !s.peruDate(existing.WorkDate).After(today) {
-		return nil, fmt.Errorf("%w: shifts cannot be modified on or after their work date", core.ErrLocked)
+
+	existingDate := s.peruDate(existing.WorkDate)
+
+	if !CanManageAssignmentForDate(existingDate, today) {
+		return nil, ErrAssignmentOutsideAllowedWeek
 	}
-	if !date.After(today) {
-		return nil, fmt.Errorf("work_date must be at least one day in advance")
+
+	if !CanManageAssignmentForDate(date, today) {
+		return nil, ErrAssignmentOutsideAllowedWeek
 	}
 	if occupied, findErr := s.repo.FindAssignmentByWorkerAndDate(ctx, existing.WorkerID, date); findErr == nil && occupied.ID != existing.ID {
 		return nil, &domain.AssignmentConflictError{Existing: *occupied}
