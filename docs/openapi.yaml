@@ -4,7 +4,11 @@ info:
   version: 1.0.0
   description: API de usuarios y autenticación. ADMIN, OWNER y RRHH reciben access token de 5 minutos y refresh token de 7 días. WORKER recibe access token de 45 segundos sin refresh token.
 servers:
+  - url: https://restaurant-no-there-production.up.railway.app/api/v1
+    description: Producción
+
   - url: http://localhost:8080/api/v1
+    description: Local
 tags:
   - name: Auth
   - name: Users
