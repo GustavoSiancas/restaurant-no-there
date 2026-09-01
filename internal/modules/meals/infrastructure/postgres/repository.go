@@ -274,6 +274,45 @@ func (r *Repository) DetailedReportRows(ctx context.Context, filters domain.Repo
 	}
 	return result, rows.Err()
 }
+
+func (r *Repository) MealStatusSummary(ctx context.Context, from, to time.Time) ([]domain.MealStatusSummary, error) {
+	rows, err := r.db.Query(ctx, `WITH meal_types(meal_type) AS (
+		VALUES ('BREAKFAST'::meal_type), ('LUNCH'::meal_type), ('DINNER'::meal_type)
+	) SELECT mt.meal_type,
+		COUNT(c.id),
+		COUNT(c.id) FILTER (WHERE c.status IN ('CLAIMED','CLAIMED_BUT_NOT_VALIDATED','VALIDATED')),
+		COUNT(c.id) FILTER (WHERE c.status IN ('CREATED','NOT_CLAIMED')),
+		COUNT(c.id) FILTER (WHERE c.status='CREATED'),
+		COUNT(c.id) FILTER (WHERE c.status='CLAIMED'),
+		COUNT(c.id) FILTER (WHERE c.status='CLAIMED_BUT_NOT_VALIDATED'),
+		COUNT(c.id) FILTER (WHERE c.status='VALIDATED'),
+		COUNT(c.id) FILTER (WHERE c.status='NOT_CLAIMED')
+	FROM meal_types mt
+	LEFT JOIN meal_claims c ON c.meal_type=mt.meal_type AND c.service_date BETWEEN $1::date AND $2::date
+	GROUP BY mt.meal_type
+	ORDER BY CASE mt.meal_type WHEN 'BREAKFAST' THEN 1 WHEN 'LUNCH' THEN 2 ELSE 3 END`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domain.MealStatusSummary, 0, 3)
+	for rows.Next() {
+		var item domain.MealStatusSummary
+		var created, claimed, claimedButNotValidated, validated, notClaimed int64
+		if err = rows.Scan(&item.MealType, &item.Total, &item.Claimed, &item.NotClaimed, &created, &claimed, &claimedButNotValidated, &validated, &notClaimed); err != nil {
+			return nil, err
+		}
+		item.ByStatus = map[domain.ClaimStatus]int64{
+			domain.ClaimCreated:             created,
+			domain.ClaimClaimed:             claimed,
+			domain.ClaimClaimedNotValidated: claimedButNotValidated,
+			domain.ClaimValidated:           validated,
+			domain.ClaimNotClaimed:          notClaimed,
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
 func (r *Repository) Report(ctx context.Context, from, to time.Time) ([]domain.ReportRow, error) {
 	rows, err := r.db.Query(ctx, `WITH eligible AS (
 		SELECT worker_id, work_date AS service_date, 'BREAKFAST'::meal_type AS meal_type FROM worker_shift_assignments WHERE shift_type='DAY' AND status='CLOSED'

@@ -193,6 +193,22 @@ paths:
         '201': {description: Asignación creada, content: {application/json: {schema: {$ref: '#/components/schemas/Assignment'}}}}
         '400': {$ref: '#/components/responses/BadRequest'}
         '409': {description: El trabajador ya tiene un turno ese día, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentConflict'}}}}
+  /worker-shift-assignments/add-massive:
+    post:
+      tags: [Workforce]
+      summary: Asignar masivamente un turno a trabajadores
+      description: Solo RRHH. El rango es inclusivo y debe comenzar como minimo manana segun America/Lima. Reemplaza cualquier asignacion OPEN existente para cada trabajador y fecha. La operacion es atomica.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MassiveAssignmentRequest'}
+      responses:
+        '201': {description: Turnos creados, content: {application/json: {schema: {$ref: '#/components/schemas/MassiveAssignmentResponse'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {description: Existe una asignacion no reemplazable}
   /worker-shift-assignments/{id}:
     put:
       tags: [Workforce]
@@ -307,6 +323,33 @@ paths:
         '200': {description: Pedidos, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MealOrder'}}}}}
         '400': {$ref: '#/components/responses/BadRequest'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /meal-status-reports:
+    get:
+      tags: [Meals]
+      summary: Reporte paginado de estados de comidas por rango
+      description: OWNER y RRHH. Agrupa por tipo de comida los estados reclamados (CLAIMED, CLAIMED_BUT_NOT_VALIDATED y VALIDATED) y no reclamados (CREATED y NOT_CLAIMED), e incluye el detalle por trabajador.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date}}
+        - {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: page_size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200': {description: Resumen por comida y detalle paginado con estados exactos}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /meal-status-reports/export.xlsx:
+    get:
+      tags: [Meals]
+      summary: Exportar estados de comidas por rango
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date}}
+      responses:
+        '200': {description: Archivo Excel con hojas Resumen y Detalle}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /meal-reports/daily:
     get:
       tags: [Meals]
@@ -371,6 +414,8 @@ paths:
       security: [{bearerAuth: []}]
       parameters:
         - {name: date, in: query, required: false, schema: {type: string, format: date}}
+        - {name: from, in: query, required: false, description: Inicio inclusivo del rango; debe enviarse junto con to., schema: {type: string, format: date}}
+        - {name: to, in: query, required: false, description: Fin inclusivo del rango; debe enviarse junto con from., schema: {type: string, format: date}}
         - {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
 
         - {name: page_size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
@@ -398,6 +443,8 @@ paths:
       security: [{bearerAuth: []}]
       parameters:
         - {name: date, in: query, required: false, schema: {type: string, format: date}}
+        - {name: from, in: query, required: false, description: Inicio inclusivo; debe enviarse junto con to., schema: {type: string, format: date}}
+        - {name: to, in: query, required: false, description: Fin inclusivo; debe enviarse junto con from., schema: {type: string, format: date}}
 
         - {name: meal_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}}
 
@@ -508,6 +555,27 @@ components:
         shift_type: {type: string, enum: [DAY, NIGHT]}
         work_date: {type: string, format: date}
         notes: {type: string}
+    MassiveAssignmentRequest:
+      type: object
+      required: [dates, shift, workers]
+      properties:
+        dates:
+          type: object
+          required: [from, to]
+          properties:
+            from: {type: string, format: date, example: '2026-09-14'}
+            to: {type: string, format: date, example: '2026-09-20'}
+        shift: {type: string, enum: [DAY, NIGHT]}
+        workers:
+          type: array
+          minItems: 1
+          items: {type: string, format: uuid}
+    MassiveAssignmentResponse:
+      type: object
+      required: [created, replaced]
+      properties:
+        created: {type: integer, example: 105}
+        replaced: {type: integer, example: 12}
     WorkerCurrentStatus:
       type: object
       properties:

@@ -197,6 +197,64 @@ func (h *Handler) ExportDetailedReport(c *gin.Context) {
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content)
 }
+
+func mealStatusReportQuery(c *gin.Context) (time.Time, time.Time, int, int, error) {
+	from, fromErr := time.Parse("2006-01-02", strings.TrimSpace(c.Query("from")))
+	to, toErr := time.Parse("2006-01-02", strings.TrimSpace(c.Query("to")))
+	if fromErr != nil || toErr != nil {
+		return time.Time{}, time.Time{}, 0, 0, fmt.Errorf("from and to are required and must use YYYY-MM-DD")
+	}
+	page, pageSize := 1, 20
+	var err error
+	if value := c.Query("page"); value != "" {
+		page, err = strconv.Atoi(value)
+		if err != nil || page < 1 {
+			return time.Time{}, time.Time{}, 0, 0, fmt.Errorf("page must be a positive integer")
+		}
+	}
+	if value := c.Query("page_size"); value != "" {
+		pageSize, err = strconv.Atoi(value)
+		if err != nil || pageSize < 1 || pageSize > 100 {
+			return time.Time{}, time.Time{}, 0, 0, fmt.Errorf("page_size must be between 1 and 100")
+		}
+	}
+	return from, to, page, pageSize, nil
+}
+
+func (h *Handler) MealStatusReport(c *gin.Context) {
+	from, to, page, pageSize, err := mealStatusReportQuery(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	report, err := h.service.MealStatusReport(c, from, to, page, pageSize, true)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, report)
+}
+
+func (h *Handler) ExportMealStatusReport(c *gin.Context) {
+	from, to, _, _, err := mealStatusReportQuery(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	report, err := h.service.MealStatusReport(c, from, to, 1, 100, false)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	content, err := reportexcel.BuildMealStatusReport(report)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate Excel report"})
+		return
+	}
+	filename := fmt.Sprintf("estados-comidas-%s-%s.xlsx", report.From.Format("20060102"), report.To.Format("20060102"))
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content)
+}
 func (h *Handler) Report(c *gin.Context) {
 	from, e1 := time.Parse("2006-01-02", c.Query("from"))
 	to, e2 := time.Parse("2006-01-02", c.Query("to"))

@@ -12,6 +12,7 @@ type Repository interface {
 	CreateWorker(ctx context.Context, user *userdomain.User, info *domain.WorkerInformation, dni string) error
 	FindWorkerInformation(ctx context.Context, userID string) (*domain.WorkerInformation, error)
 	CreateAssignment(ctx context.Context, assignment *domain.WorkerShiftAssignment) error
+	ReplaceOpenAssignments(ctx context.Context, workerIDs []string, shiftType domain.ShiftType, from, to time.Time, assignedBy string) (created, replaced int, err error)
 	FindAssignmentByID(ctx context.Context, id string) (*domain.WorkerShiftAssignment, error)
 	FindAssignmentByWorkerAndDate(ctx context.Context, workerID string, date time.Time) (*domain.WorkerShiftAssignment, error)
 	UpdateAssignment(ctx context.Context, assignment *domain.WorkerShiftAssignment) error

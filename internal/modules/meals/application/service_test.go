@@ -11,12 +11,14 @@ import (
 )
 
 type fakeMealsRepository struct {
-	created  bool
-	eligible bool
-	rules    []domain.ServiceRule
-	claim    *domain.Claim
-	closed   []domain.MealType
-	shift    *domain.CurrentShift
+	created       bool
+	eligible      bool
+	rules         []domain.ServiceRule
+	claim         *domain.Claim
+	closed        []domain.MealType
+	shift         *domain.CurrentShift
+	statusSummary []domain.MealStatusSummary
+	reportRows    []domain.DetailedReportRow
 }
 
 func (f *fakeMealsRepository) FindRule(context.Context, domain.MealType) (*domain.ServiceRule, error) {
@@ -71,10 +73,31 @@ func (f *fakeMealsRepository) DetailedReportSummary(context.Context, domain.Repo
 	return domain.DetailedReportSummary{}, nil
 }
 func (f *fakeMealsRepository) DetailedReportRows(context.Context, domain.ReportFilters, int, int) ([]domain.DetailedReportRow, error) {
-	return nil, nil
+	return f.reportRows, nil
+}
+func (f *fakeMealsRepository) MealStatusSummary(context.Context, time.Time, time.Time) ([]domain.MealStatusSummary, error) {
+	return f.statusSummary, nil
 }
 func (f *fakeMealsRepository) Report(context.Context, time.Time, time.Time) ([]domain.ReportRow, error) {
 	return nil, nil
+}
+
+func TestMealStatusReportReturnsSummaryAndPaginatedDetail(t *testing.T) {
+	date := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	repo := &fakeMealsRepository{
+		statusSummary: []domain.MealStatusSummary{
+			{MealType: domain.Breakfast, Total: 5, Claimed: 3, NotClaimed: 2},
+			{MealType: domain.Lunch, Total: 4, Claimed: 4},
+		},
+		reportRows: []domain.DetailedReportRow{{ID: "claim"}},
+	}
+	report, err := NewService(repo).MealStatusReport(context.Background(), date, date, 1, 5, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Total != 9 || report.TotalPages != 2 || len(report.Data) != 1 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
 }
 
 func TestClaimUsesPeruWindowAndEligibleShift(t *testing.T) {

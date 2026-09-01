@@ -34,6 +34,11 @@ type RegisterWorkerInput struct {
 	EmergencyContactName, EmergencyContactPhone, Notes string
 }
 
+type MassiveAssignmentResult struct {
+	Created  int `json:"created"`
+	Replaced int `json:"replaced"`
+}
+
 func nullable(value string) *string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -90,6 +95,49 @@ func (s *Service) AssignWorker(ctx context.Context, workerID string, shiftType d
 		return nil, err
 	}
 	return a, nil
+}
+
+func (s *Service) AddMassiveShiftWorkers(ctx context.Context, workerIDs []string, shiftType domain.ShiftType, assignedBy string, from, to time.Time) (*MassiveAssignmentResult, error) {
+	if shiftType != domain.ShiftDay && shiftType != domain.ShiftNight {
+		return nil, fmt.Errorf("shift must be DAY or NIGHT")
+	}
+	from, to = s.peruDate(from), s.peruDate(to)
+	if from.After(to) {
+		return nil, fmt.Errorf("dates.from must be before or equal to dates.to")
+	}
+	if !CanManageAssignmentForDate(from, s.peruToday()) {
+		return nil, ErrAssignmentOutsideAllowedWeek
+	}
+
+	uniqueWorkers := make([]string, 0, len(workerIDs))
+	seen := make(map[string]struct{}, len(workerIDs))
+	for _, workerID := range workerIDs {
+		workerID = strings.TrimSpace(workerID)
+		if workerID == "" {
+			return nil, fmt.Errorf("workers cannot contain empty IDs")
+		}
+		if _, exists := seen[workerID]; exists {
+			continue
+		}
+		worker, err := s.users.FindByID(ctx, workerID)
+		if err != nil || worker.Role != userdomain.RoleWorker || !worker.Active {
+			return nil, fmt.Errorf("active WORKER not found: %s", workerID)
+		}
+		if _, err = s.repo.FindWorkerInformation(ctx, workerID); err != nil {
+			return nil, fmt.Errorf("worker information must be registered first: %s", workerID)
+		}
+		seen[workerID] = struct{}{}
+		uniqueWorkers = append(uniqueWorkers, workerID)
+	}
+	if len(uniqueWorkers) == 0 {
+		return nil, fmt.Errorf("workers must contain at least one worker ID")
+	}
+
+	created, replaced, err := s.repo.ReplaceOpenAssignments(ctx, uniqueWorkers, shiftType, from, to, assignedBy)
+	if err != nil {
+		return nil, err
+	}
+	return &MassiveAssignmentResult{Created: created, Replaced: replaced}, nil
 }
 
 func (s *Service) UpdateAssignment(ctx context.Context, id string, shiftType domain.ShiftType, date time.Time, notes string) (*domain.WorkerShiftAssignment, error) {
@@ -418,7 +466,7 @@ func (s *Service) ShiftPreview(
 				displayName = "BREAKFAST"
 			case "LUNCH":
 				displayName = "ALMUERZO"
-			case "NIGHT":
+			case "DINNER":
 				displayName = "CENA"
 			}
 
@@ -543,4 +591,36 @@ func (s *Service) ShiftPreview(
 		PageSize:   pageSize,
 		TotalPages: totalPages,
 	}, nil
+}
+
+func (s *Service) ShiftPreviewRange(ctx context.Context, from, to time.Time, mealTypes []string) (*domain.ShiftPreviewRange, error) {
+	if from.IsZero() || to.IsZero() {
+		return nil, fmt.Errorf("from and to are required")
+	}
+	from, to = s.peruDate(from), s.peruDate(to)
+	if to.Before(from) {
+		return nil, fmt.Errorf("to must be on or after from")
+	}
+
+	result := &domain.ShiftPreviewRange{
+		From: from,
+		To:   to,
+		Summary: domain.ShiftPreviewSummary{ByMeal: map[string]int{
+			"BREAKFAST": 0,
+			"LUNCH":     0,
+			"DINNER":    0,
+		}},
+		Dates: make([]domain.ShiftPreview, 0),
+	}
+	for date := from; !date.After(to); date = date.AddDate(0, 0, 1) {
+		preview, err := s.ShiftPreview(ctx, date, mealTypes, 1, 100, false)
+		if err != nil {
+			return nil, err
+		}
+		result.Dates = append(result.Dates, *preview)
+		for mealType, count := range preview.Summary.ByMeal {
+			result.Summary.ByMeal[mealType] += count
+		}
+	}
+	return result, nil
 }

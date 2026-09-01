@@ -72,6 +72,28 @@ func previewQuery(c *gin.Context) (
 }
 
 func (h *Handler) ShiftPreview(c *gin.Context) {
+	fromValue := strings.TrimSpace(c.Query("from"))
+	toValue := strings.TrimSpace(c.Query("to"))
+	if fromValue != "" || toValue != "" {
+		if fromValue == "" || toValue == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "from and to are both required"})
+			return
+		}
+		from, fromErr := time.Parse("2006-01-02", fromValue)
+		to, toErr := time.Parse("2006-01-02", toValue)
+		if fromErr != nil || toErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "from and to must use YYYY-MM-DD"})
+			return
+		}
+		report, err := h.service.ShiftPreviewRange(c, from, to, c.QueryArray("meal_type"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, report)
+		return
+	}
+
 	date, meals, page, size, err := previewQuery(c)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
@@ -95,13 +117,42 @@ func (h *Handler) ShiftPreview(c *gin.Context) {
 }
 
 func (h *Handler) ExportShiftPreview(c *gin.Context) {
+	fromValue := strings.TrimSpace(c.Query("from"))
+	toValue := strings.TrimSpace(c.Query("to"))
+	if fromValue != "" || toValue != "" {
+		if fromValue == "" || toValue == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "from and to are both required"})
+			return
+		}
+		from, fromErr := time.Parse("2006-01-02", fromValue)
+		to, toErr := time.Parse("2006-01-02", toValue)
+		if fromErr != nil || toErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "from and to must use YYYY-MM-DD"})
+			return
+		}
+		report, err := h.service.ShiftPreviewRange(c, from, to, c.QueryArray("meal_type"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		content, err := previewexcel.BuildShiftPreviewRange(report)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate Excel report"})
+			return
+		}
+		name := fmt.Sprintf("comidas-%s-%s.xlsx", from.Format("20060102"), to.Format("20060102"))
+		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+		c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content)
+		return
+	}
+
 	date, _, _, _, err := previewQuery(c)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 
-	report, err := h.service.ShiftPreview(	
+	report, err := h.service.ShiftPreview(
 		c,
 		date,
 		nil,
@@ -190,6 +241,44 @@ func (h *Handler) AssignWorker(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, a)
+}
+
+type massiveAssignmentRequest struct {
+	Dates struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	} `json:"dates"`
+	Shift   domain.ShiftType `json:"shift"`
+	Workers []string         `json:"workers"`
+}
+
+func (h *Handler) AddMassiveShiftWorkers(c *gin.Context) {
+	var r massiveAssignmentRequest
+	if c.ShouldBindJSON(&r) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+	from, fromErr := time.Parse("2006-01-02", r.Dates.From)
+	to, toErr := time.Parse("2006-01-02", r.Dates.To)
+	if fromErr != nil || toErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dates.from and dates.to must use YYYY-MM-DD"})
+		return
+	}
+	assignedBy, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated user not found"})
+		return
+	}
+	result, err := h.service.AddMassiveShiftWorkers(c, r.Workers, r.Shift, assignedBy.(string), from, to)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, core.ErrConflict) {
+			status = http.StatusConflict
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, result)
 }
 
 type updateAssignmentRequest struct {

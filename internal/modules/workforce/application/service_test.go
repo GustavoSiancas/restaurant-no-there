@@ -33,10 +33,12 @@ func (f fakeUsers) List(context.Context) ([]userdomain.User, error)           { 
 func (f fakeUsers) RoleExists(context.Context, userdomain.Role) (bool, error) { return false, nil }
 
 type fakeRepository struct {
-	existing *domain.WorkerShiftAssignment
-	created  bool
-	preview  []domain.ShiftPreviewRow
-	rules    []domain.PreviewRule
+	existing     *domain.WorkerShiftAssignment
+	created      bool
+	bulkCreated  int
+	bulkReplaced int
+	preview      []domain.ShiftPreviewRow
+	rules        []domain.PreviewRule
 }
 
 func (f *fakeRepository) CreateWorker(context.Context, *userdomain.User, *domain.WorkerInformation, string) error {
@@ -49,6 +51,10 @@ func (f *fakeRepository) FindWorkerInformation(context.Context, string) (*domain
 func (f *fakeRepository) CreateAssignment(context.Context, *domain.WorkerShiftAssignment) error {
 	f.created = true
 	return nil
+}
+func (f *fakeRepository) ReplaceOpenAssignments(context.Context, []string, domain.ShiftType, time.Time, time.Time, string) (int, int, error) {
+	f.created = true
+	return f.bulkCreated, f.bulkReplaced, nil
 }
 func (f *fakeRepository) FindAssignmentByID(context.Context, string) (*domain.WorkerShiftAssignment, error) {
 	if f.existing == nil {
@@ -187,5 +193,37 @@ func TestAssignWorkerRequiresAtLeastTomorrow(t *testing.T) {
 				t.Fatalf("created=%v, want %v", repo.created, !test.wantError)
 			}
 		})
+	}
+}
+
+func TestAddMassiveShiftWorkersAllowsTomorrowAndReturnsCounts(t *testing.T) {
+	peru := time.FixedZone("UTC-5", -5*60*60)
+	repo := &fakeRepository{bulkCreated: 14, bulkReplaced: 3}
+	user := &userdomain.User{Entity: core.Entity{ID: "worker"}, Role: userdomain.RoleWorker, Active: true}
+	service := NewService(repo, fakeUsers{user: user})
+	service.now = func() time.Time { return time.Date(2026, 9, 1, 23, 59, 59, 0, peru) }
+
+	result, err := service.AddMassiveShiftWorkers(context.Background(), []string{"worker", "worker"}, domain.ShiftDay, "rrhh", time.Date(2026, 9, 2, 0, 0, 0, 0, peru), time.Date(2026, 9, 15, 0, 0, 0, 0, peru))
+	if err != nil {
+		t.Fatalf("expected massive assignment to be allowed, got %v", err)
+	}
+	if !repo.created || result.Created != 14 || result.Replaced != 3 {
+		t.Fatalf("unexpected massive assignment result: %+v", result)
+	}
+}
+
+func TestAddMassiveShiftWorkersRejectsToday(t *testing.T) {
+	peru := time.FixedZone("UTC-5", -5*60*60)
+	repo := &fakeRepository{}
+	user := &userdomain.User{Entity: core.Entity{ID: "worker"}, Role: userdomain.RoleWorker, Active: true}
+	service := NewService(repo, fakeUsers{user: user})
+	service.now = func() time.Time { return time.Date(2026, 9, 1, 10, 0, 0, 0, peru) }
+
+	_, err := service.AddMassiveShiftWorkers(context.Background(), []string{"worker"}, domain.ShiftDay, "rrhh", time.Date(2026, 9, 1, 0, 0, 0, 0, peru), time.Date(2026, 9, 2, 0, 0, 0, 0, peru))
+	if err == nil {
+		t.Fatal("expected today's date to be rejected")
+	}
+	if repo.created {
+		t.Fatal("massive assignments must not be created for today")
 	}
 }

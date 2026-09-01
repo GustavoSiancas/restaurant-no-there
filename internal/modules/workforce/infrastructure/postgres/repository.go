@@ -62,6 +62,32 @@ func (r *Repository) CreateAssignment(ctx context.Context, a *domain.WorkerShift
 	err := r.db.QueryRow(ctx, `INSERT INTO worker_shift_assignments (worker_id,shift_type,work_date,assigned_by,notes) VALUES ($1,$2,$3,$4,$5) RETURNING id,status,created_at,updated_at`, a.WorkerID, a.ShiftType, a.WorkDate, a.AssignedBy, a.Notes).Scan(&a.ID, &a.Status, &a.CreatedAt, &a.UpdatedAt)
 	return translate(err)
 }
+
+func (r *Repository) ReplaceOpenAssignments(ctx context.Context, workerIDs []string, shiftType domain.ShiftType, from, to time.Time, assignedBy string) (created, replaced int, err error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	for date := from; !date.After(to); date = date.AddDate(0, 0, 1) {
+		for _, workerID := range workerIDs {
+			result, execErr := tx.Exec(ctx, `DELETE FROM worker_shift_assignments WHERE worker_id=$1 AND work_date=$2 AND status='OPEN'`, workerID, date)
+			if execErr != nil {
+				return 0, 0, translate(execErr)
+			}
+			replaced += int(result.RowsAffected())
+			if _, execErr = tx.Exec(ctx, `INSERT INTO worker_shift_assignments (worker_id,shift_type,work_date,assigned_by) VALUES ($1,$2,$3,$4)`, workerID, shiftType, date, assignedBy); execErr != nil {
+				return 0, 0, translate(execErr)
+			}
+			created++
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return 0, 0, err
+	}
+	return created, replaced, nil
+}
 func (r *Repository) FindAssignmentByID(ctx context.Context, id string) (*domain.WorkerShiftAssignment, error) {
 	return scanAssignment(r.db.QueryRow(ctx, `SELECT id,worker_id,shift_type,status,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE id=$1`, id))
 }

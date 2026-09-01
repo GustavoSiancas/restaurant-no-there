@@ -37,3 +37,10 @@ type ShiftPreview struct {
 	PageSize   int                 `json:"page_size"`
 	TotalPages int                 `json:"total_pages"`
 }
+
+type ShiftPreviewRange struct {
+	From    time.Time           `json:"from"`
+	To      time.Time           `json:"to"`
+	Summary ShiftPreviewSummary `json:"summary"`
+	Dates   []ShiftPreview      `json:"dates"`
+}

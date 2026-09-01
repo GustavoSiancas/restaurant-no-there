@@ -188,6 +188,48 @@ func (s *Service) DetailedReport(ctx context.Context, filters domain.ReportFilte
 	return &domain.DetailedReport{Filters: filters, Summary: summary, Data: rows, Page: page, PageSize: pageSize, Total: summary.TotalEligible, TotalPages: totalPages}, nil
 }
 
+func (s *Service) MealStatusReport(ctx context.Context, from, to time.Time, page, pageSize int, paginate bool) (*domain.MealStatusReport, error) {
+	if from.IsZero() || to.IsZero() {
+		return nil, fmt.Errorf("from and to are required")
+	}
+	location := s.peruLocation()
+	from = time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, location)
+	to = time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, location)
+	if to.Before(from) {
+		return nil, fmt.Errorf("to must be on or after from")
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	summary, err := s.repo.MealStatusSummary(ctx, from, to)
+	if err != nil {
+		return nil, err
+	}
+	var total int64
+	for _, item := range summary {
+		total += item.Total
+	}
+	limit, offset := 0, 0
+	if paginate {
+		limit, offset = pageSize, (page-1)*pageSize
+	}
+	rows, err := s.repo.DetailedReportRows(ctx, domain.ReportFilters{From: from, To: to}, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	totalPages := 0
+	if total > 0 {
+		totalPages = int((total + int64(pageSize) - 1) / int64(pageSize))
+	}
+	return &domain.MealStatusReport{From: from, To: to, Summary: summary, Data: rows, Page: page, PageSize: pageSize, Total: total, TotalPages: totalPages}, nil
+}
+
 func (s *Service) ListOrders(ctx context.Context, status domain.ClaimStatus) ([]domain.MealOrder, error) {
 	if status == "" {
 		status = domain.ClaimClaimed
