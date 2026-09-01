@@ -107,6 +107,10 @@ func (s *Service) UpdateAssignment(ctx context.Context, id string, shiftType dom
 	if existing.Status != domain.ShiftOpen {
 		return nil, core.ErrLocked
 	}
+	if !CanManageAssignmentForDate(existing.WorkDate, s.peruToday()) ||
+		!CanManageAssignmentForDate(date, s.peruToday()) {
+		return nil, core.ErrLocked
+	}
 	if occupied, findErr := s.repo.FindAssignmentByWorkerAndDate(ctx, existing.WorkerID, date); findErr == nil && occupied.ID != existing.ID {
 		return nil, &domain.AssignmentConflictError{Existing: *occupied}
 	} else if findErr != nil && !errors.Is(findErr, core.ErrNotFound) {
@@ -128,6 +132,9 @@ func (s *Service) DeleteAssignment(ctx context.Context, id string) error {
 	}
 
 	if assignment.Status != domain.ShiftOpen {
+		return core.ErrLocked
+	}
+	if !CanManageAssignmentForDate(assignment.WorkDate, s.peruToday()) {
 		return core.ErrLocked
 	}
 

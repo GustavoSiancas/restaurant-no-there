@@ -6,33 +6,14 @@ import (
 )
 
 var ErrAssignmentOutsideAllowedWeek = errors.New(
-	"worker shift assignments can only be created or modified for next week",
+	"worker shift assignments can only be created or modified until the day before the shift",
 )
 
 func CanManageAssignmentForDate(workDate time.Time, now time.Time) bool {
 	workDate = normalizeDate(workDate)
 	now = normalizeDate(now)
 
-	currentWeekStart := startOfWeek(now)
-
-	nextWeekStart := currentWeekStart.AddDate(0, 0, 7)
-	nextWeekEnd := nextWeekStart.AddDate(0, 0, 6)
-
-	return !workDate.Before(nextWeekStart) &&
-		!workDate.After(nextWeekEnd)
-}
-
-func startOfWeek(t time.Time) time.Time {
-	weekday := int(t.Weekday())
-
-	// Go considera Sunday = 0
-	if weekday == 0 {
-		weekday = 7
-	}
-
-	monday := t.AddDate(0, 0, -(weekday - 1))
-
-	return normalizeDate(monday)
+	return workDate.After(now)
 }
 
 func normalizeDate(t time.Time) time.Time {

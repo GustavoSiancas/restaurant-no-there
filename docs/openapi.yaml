@@ -182,7 +182,7 @@ paths:
     post:
       tags: [Workforce]
       summary: Agendar un trabajador en un turno
-      description: Solo ADMIN o RRHH. Máximo un turno por trabajador y fecha. Solo se pueden crear o modificar turnos de la semana siguiente.
+      description: Solo RRHH. Máximo un turno por trabajador y fecha. Puede asignarse hasta las 23:59 del día anterior al turno, según America/Lima.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
@@ -197,7 +197,7 @@ paths:
     put:
       tags: [Workforce]
       summary: Modificar un turno asignado
-      description: Solo ADMIN o RRHH. Solo se pueden modificar turnos de la semana siguiente.
+      description: Solo RRHH. Puede modificarse hasta las 23:59 del día anterior al turno; desde el inicio del día queda bloqueado según America/Lima.
       security: [{bearerAuth: []}]
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
       requestBody:
@@ -214,7 +214,7 @@ paths:
     delete:
       tags: [Workforce]
       summary: Eliminar un turno asignado
-      description: Solo ADMIN o RRHH. Puede eliminarse hasta el día anterior; desde el inicio del día del turno queda bloqueado según America/Lima.
+      description: Solo RRHH. Puede eliminarse hasta las 23:59 del día anterior; desde el inicio del día del turno queda bloqueado según America/Lima.
       security: [{bearerAuth: []}]
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
       responses:

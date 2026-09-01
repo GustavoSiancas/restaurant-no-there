@@ -120,7 +120,7 @@ func TestAssignWorkerRejectsSecondShiftOnSameDate(t *testing.T) {
 }
 
 func TestUpdateAssignmentIsLockedOnWorkDate(t *testing.T) {
-	repo := &fakeRepository{existing: &domain.WorkerShiftAssignment{ID: "assignment", WorkDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}}
+	repo := &fakeRepository{existing: &domain.WorkerShiftAssignment{ID: "assignment", Status: domain.ShiftOpen, WorkDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}}
 	service := NewService(repo, fakeUsers{})
 	service.now = func() time.Time { return time.Date(2026, 9, 1, 12, 0, 0, 0, time.FixedZone("UTC-5", -5*60*60)) }
 	_, err := service.UpdateAssignment(context.Background(), "assignment", domain.ShiftNight, time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC), "")
@@ -133,7 +133,7 @@ func TestUpdateAssignmentIsLockedOnWorkDate(t *testing.T) {
 }
 
 func TestDeleteAssignmentIsLockedOnWorkDate(t *testing.T) {
-	repo := &fakeRepository{existing: &domain.WorkerShiftAssignment{ID: "assignment", WorkDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}}
+	repo := &fakeRepository{existing: &domain.WorkerShiftAssignment{ID: "assignment", Status: domain.ShiftOpen, WorkDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)}}
 	service := NewService(repo, fakeUsers{})
 	service.now = func() time.Time { return time.Date(2026, 9, 1, 0, 1, 0, 0, time.FixedZone("UTC-5", -5*60*60)) }
 	err := service.DeleteAssignment(context.Background(), "assignment")
@@ -142,6 +142,24 @@ func TestDeleteAssignmentIsLockedOnWorkDate(t *testing.T) {
 	}
 	if repo.created {
 		t.Fatal("locked assignment must not be deleted")
+	}
+}
+
+func TestUpdateAssignmentIsAllowedUntilPreviousDay2359InLima(t *testing.T) {
+	peru := time.FixedZone("UTC-5", -5*60*60)
+	repo := &fakeRepository{existing: &domain.WorkerShiftAssignment{
+		ID: "assignment", WorkerID: "worker", Status: domain.ShiftOpen,
+		WorkDate: time.Date(2026, 9, 2, 0, 0, 0, 0, peru),
+	}}
+	service := NewService(repo, fakeUsers{})
+	service.now = func() time.Time { return time.Date(2026, 9, 1, 23, 59, 59, 0, peru) }
+
+	_, err := service.UpdateAssignment(context.Background(), "assignment", domain.ShiftNight, time.Date(2026, 9, 2, 0, 0, 0, 0, peru), "")
+	if err != nil {
+		t.Fatalf("expected update to be allowed, got %v", err)
+	}
+	if !repo.created {
+		t.Fatal("assignment should be updated before midnight")
 	}
 }
 
