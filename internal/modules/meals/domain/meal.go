@@ -6,19 +6,20 @@ type MealType string
 type ClaimStatus string
 
 const (
-	Breakfast MealType = "DESAYUNO"
-	Afternoon MealType = "TARDE"
-	Night     MealType = "NOCHE"
+	Breakfast MealType = "BREAKFAST"
+	Lunch     MealType = "LUNCH"
+	Dinner    MealType = "DINNER"
 )
 
 const (
-	ClaimRequested             ClaimStatus = "REQUESTED"
-	ClaimValidated             ClaimStatus = "VALIDATED"
-	ClaimNotConsumed           ClaimStatus = "NOT_CONSUMED"
-	ClaimRequestedNotValidated ClaimStatus = "REQUESTED_BUT_NOT_VALIDATED"
+	ClaimCreated             ClaimStatus = "CREATED"
+	ClaimClaimed             ClaimStatus = "CLAIMED"
+	ClaimNotClaimed          ClaimStatus = "NOT_CLAIMED"
+	ClaimClaimedNotValidated ClaimStatus = "CLAIMED_BUT_NOT_VALIDATED"
+	ClaimValidated           ClaimStatus = "VALIDATED"
 )
 
-func (m MealType) Valid() bool { return m == Breakfast || m == Afternoon || m == Night }
+func (m MealType) Valid() bool { return m == Breakfast || m == Lunch || m == Dinner }
 
 type ServiceRule struct {
 	MealType    MealType `json:"meal_type"`

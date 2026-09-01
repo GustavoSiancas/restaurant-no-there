@@ -15,6 +15,7 @@ type Repository interface {
 	FindClaim(ctx context.Context, workerID string, mealType domain.MealType, serviceDate time.Time) (*domain.Claim, error)
 	FindWorkerTicketIdentity(ctx context.Context, workerID string) (*domain.WorkerTicketIdentity, error)
 	CreateClaim(ctx context.Context, claim *domain.Claim) error
+	CloseShiftsAndCreateClaims(ctx context.Context, throughDate, closedAt time.Time) (int64, error)
 	ListOrders(ctx context.Context, status domain.ClaimStatus) ([]domain.MealOrder, error)
 	FindOrderByID(ctx context.Context, id string) (*domain.MealOrder, error)
 	ValidateOrder(ctx context.Context, id, validatedBy string, validatedAt time.Time) (*domain.MealOrder, error)

@@ -26,7 +26,7 @@ func NewService(repo Repository, clocks ...func() time.Time) *Service {
 
 func (s *Service) Claim(ctx context.Context, workerID string, mealType domain.MealType, notes string) (*domain.Claim, error) {
 	if !mealType.Valid() {
-		return nil, fmt.Errorf("meal_type must be DESAYUNO, TARDE or NOCHE")
+		return nil, fmt.Errorf("meal_type must be BREAKFAST, LUNCH or DINNER")
 	}
 	rule, err := s.repo.FindRule(ctx, mealType)
 	if err != nil || !rule.Active {
@@ -95,6 +95,10 @@ func (s *Service) CloseExpiredMealWindows(ctx context.Context, lookbackDays int)
 	}
 	now := s.now().In(s.peruLocation())
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	created, err := s.repo.CloseShiftsAndCreateClaims(ctx, today, now)
+	if err != nil {
+		return 0, err
+	}
 	firstDate := today.AddDate(0, 0, -lookbackDays)
 	oldestPending, err := s.repo.EarliestPendingServiceDate(ctx)
 	if err != nil {
@@ -110,7 +114,6 @@ func (s *Service) CloseExpiredMealWindows(ctx context.Context, lookbackDays int)
 	if err != nil {
 		return 0, err
 	}
-	var created int64
 	for serviceDate := firstDate; !serviceDate.After(today); serviceDate = serviceDate.AddDate(0, 0, 1) {
 		for _, rule := range rules {
 			if !rule.Active {
@@ -120,7 +123,10 @@ func (s *Service) CloseExpiredMealWindows(ctx context.Context, lookbackDays int)
 			if parseErr != nil {
 				return created, parseErr
 			}
-			if now.Before(windowEnd) {
+			// A claimed meal remains validatable for 30 minutes after the
+			// worker claim window closes. Finalization happens only after that.
+			validationEnd := windowEnd.Add(30 * time.Minute)
+			if now.Before(validationEnd) {
 				continue
 			}
 			closure, createErr := s.repo.CloseMealWindow(ctx, rule.MealType, serviceDate, now)
@@ -149,10 +155,10 @@ func (s *Service) DetailedReport(ctx context.Context, filters domain.ReportFilte
 		return nil, fmt.Errorf("to must be on or after from")
 	}
 	if filters.MealType != "" && !filters.MealType.Valid() {
-		return nil, fmt.Errorf("meal_type must be DESAYUNO, TARDE or NOCHE")
+		return nil, fmt.Errorf("meal_type must be BREAKFAST, LUNCH or DINNER")
 	}
-	if filters.ShiftType != "" && filters.ShiftType != "DIA" && filters.ShiftType != "NOCHE" {
-		return nil, fmt.Errorf("shift_type must be DIA or NOCHE")
+	if filters.ShiftType != "" && filters.ShiftType != "DAY" && filters.ShiftType != "NIGHT" {
+		return nil, fmt.Errorf("shift_type must be DAY or NIGHT")
 	}
 	if page < 1 {
 		page = 1
@@ -184,10 +190,10 @@ func (s *Service) DetailedReport(ctx context.Context, filters domain.ReportFilte
 
 func (s *Service) ListOrders(ctx context.Context, status domain.ClaimStatus) ([]domain.MealOrder, error) {
 	if status == "" {
-		status = domain.ClaimRequested
+		status = domain.ClaimClaimed
 	}
-	if status != domain.ClaimRequested && status != domain.ClaimValidated {
-		return nil, fmt.Errorf("status must be REQUESTED or VALIDATED")
+	if status != domain.ClaimClaimed && status != domain.ClaimValidated {
+		return nil, fmt.Errorf("status must be CLAIMED or VALIDATED")
 	}
 	return s.repo.ListOrders(ctx, status)
 }
@@ -214,10 +220,10 @@ func (s *Service) ValidateOrder(ctx context.Context, id, collaboratorID string) 
 	if existing.Status == domain.ClaimValidated {
 		return existing, fmt.Errorf("%w: order was already validated", core.ErrConflict)
 	}
-	if existing.Status == domain.ClaimNotConsumed || existing.Status == domain.ClaimRequestedNotValidated {
+	if existing.Status == domain.ClaimNotClaimed || existing.Status == domain.ClaimClaimedNotValidated {
 		return existing, fmt.Errorf("%w: finalized meal records cannot be validated", core.ErrConflict)
 	}
-	if existing.Status == domain.ClaimRequested {
+	if existing.Status == domain.ClaimClaimed {
 		return existing, fmt.Errorf("%w: meal validation window is closed", core.ErrConflict)
 	}
 	return existing, core.ErrNotFound
@@ -298,10 +304,10 @@ func ticketService(mealType domain.MealType) *domain.ClaimPreviewService {
 	service := &domain.ClaimPreviewService{Name: string(mealType)}
 	switch mealType {
 	case domain.Breakfast:
-		service.Type, service.Name = "BREAKFAST", "DESAYUNO"
-	case domain.Afternoon:
+		service.Type, service.Name = "BREAKFAST", "BREAKFAST"
+	case domain.Lunch:
 		service.Type, service.Name = "LUNCH", "ALMUERZO"
-	case domain.Night:
+	case domain.Dinner:
 		service.Type, service.Name = "DINNER", "CENA"
 	}
 	return service
@@ -318,10 +324,10 @@ func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.Wo
 	}
 
 	// El turno se determina con los horarios de comida configurados:
-	// DIA: inicio de DESAYUNO -> fin de TARDE.
-	// NOCHE: inicio de NOCHE -> fin de DESAYUNO del día siguiente.
-	// Durante DESAYUNO ambos tipos pueden ser elegibles; se intenta primero
-	// el turno NOCHE del día anterior y luego el turno DIA de hoy.
+	// DAY: inicio de BREAKFAST -> fin de LUNCH.
+	// DINNER: inicio de DINNER -> fin de BREAKFAST del día siguiente.
+	// Durante BREAKFAST ambos tipos pueden ser elegibles; se intenta primero
+	// el turno DINNER del día anterior y luego el turno DAY de hoy.
 	var breakfastStart, breakfastEnd, afternoonEnd, nightStart *time.Time
 	for _, rule := range rules {
 		if !rule.Active {
@@ -338,9 +344,9 @@ func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.Wo
 		switch rule.MealType {
 		case domain.Breakfast:
 			breakfastStart, breakfastEnd = &start, &end
-		case domain.Afternoon:
+		case domain.Lunch:
 			afternoonEnd = &end
-		case domain.Night:
+		case domain.Dinner:
 			nightStart = &start
 		}
 	}
@@ -356,11 +362,11 @@ func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.Wo
 		if now.Before(*breakfastEnd) {
 			workDate = today.AddDate(0, 0, -1)
 		}
-		candidates = append(candidates, shiftCandidate{"NOCHE", workDate})
+		candidates = append(candidates, shiftCandidate{"NIGHT", workDate})
 	}
 	if breakfastStart != nil && afternoonEnd != nil &&
 		!now.Before(*breakfastStart) && now.Before(*afternoonEnd) {
-		candidates = append(candidates, shiftCandidate{"DIA", today})
+		candidates = append(candidates, shiftCandidate{"DAY", today})
 	}
 	for _, candidate := range candidates {
 		shift, findErr := s.repo.FindCurrentShift(ctx, workerID, candidate.shiftType, candidate.workDate)
@@ -392,11 +398,11 @@ func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.Wo
 			})
 		}
 		switch status.CurrentShift.ShiftType {
-		case "DIA":
+		case "DAY":
 			appendMeal(domain.Breakfast, "Desayuno", status.CurrentShift.WorkDate)
-			appendMeal(domain.Afternoon, "Almuerzo", status.CurrentShift.WorkDate)
-		case "NOCHE":
-			appendMeal(domain.Night, "Cena", status.CurrentShift.WorkDate)
+			appendMeal(domain.Lunch, "Almuerzo", status.CurrentShift.WorkDate)
+		case "NIGHT":
+			appendMeal(domain.Dinner, "Cena", status.CurrentShift.WorkDate)
 			appendMeal(domain.Breakfast, "Desayuno", status.CurrentShift.WorkDate.AddDate(0, 0, 1))
 		}
 	}
@@ -429,8 +435,12 @@ func (s *Service) WorkerStatus(ctx context.Context, workerID string) (*domain.Wo
 		meal.Eligible = true
 		claim, claimErr := s.repo.FindClaim(ctx, workerID, rule.MealType, today)
 		if claimErr == nil {
-			meal.AlreadyClaimed = true
-			meal.ClaimID = &claim.ID
+			if claim.Status == domain.ClaimCreated {
+				meal.CanClaim = true
+			} else {
+				meal.AlreadyClaimed = true
+				meal.ClaimID = &claim.ID
+			}
 		} else if errors.Is(claimErr, core.ErrNotFound) {
 			meal.CanClaim = true
 		} else {

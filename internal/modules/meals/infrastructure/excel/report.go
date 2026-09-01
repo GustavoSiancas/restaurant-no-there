@@ -111,21 +111,21 @@ func optionalTime(value *time.Time) string {
 	return fmt.Sprintf("%s %02d:%02d:%02d %s", value.Format("02/01/2006"), displayHour, value.Minute(), value.Second(), suffix)
 }
 func displayMeal(value domain.MealType) string {
-	if value == domain.Afternoon {
+	if value == domain.Lunch {
 		return "ALMUERZO"
 	}
-	if value == domain.Night {
+	if value == domain.Dinner {
 		return "CENA"
 	}
-	return "DESAYUNO"
+	return "BREAKFAST"
 }
 func displayStatus(value domain.ClaimStatus) string {
 	switch value {
 	case domain.ClaimValidated:
 		return "CONSUMIÓ"
-	case domain.ClaimRequested:
+	case domain.ClaimClaimed:
 		return "SOLICITADO"
-	case domain.ClaimRequestedNotValidated:
+	case domain.ClaimClaimedNotValidated:
 		return "SOLICITADO - NO VALIDADO"
 	default:
 		return "NO CONSUMIÓ"

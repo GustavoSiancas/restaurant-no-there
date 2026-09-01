@@ -2,9 +2,10 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TYPE user_role AS ENUM ('ADMIN', 'OWNER', 'RRHH', 'WORKER', 'COLLABORATOR');
 CREATE TYPE credential_type AS ENUM ('PASSWORD', 'DNI', 'FACE_SCAN');
-CREATE TYPE shift_type AS ENUM ('DIA', 'NOCHE');
-CREATE TYPE meal_type AS ENUM ('DESAYUNO', 'TARDE', 'NOCHE');
-CREATE TYPE meal_claim_status AS ENUM ('REQUESTED', 'VALIDATED', 'NOT_CONSUMED', 'REQUESTED_BUT_NOT_VALIDATED');
+CREATE TYPE shift_type AS ENUM ('DAY', 'NIGHT');
+CREATE TYPE shift_status AS ENUM ('OPEN', 'CLOSED');
+CREATE TYPE meal_type AS ENUM ('BREAKFAST', 'LUNCH', 'DINNER');
+CREATE TYPE meal_claim_status AS ENUM ('CREATED', 'CLAIMED', 'NOT_CLAIMED', 'CLAIMED_BUT_NOT_VALIDATED', 'VALIDATED');
 
 -- Cuenta del sistema. No contiene información personal ni credenciales.
 CREATE TABLE users (
@@ -87,11 +88,12 @@ CREATE TABLE worker_information (
     CONSTRAINT worker_information_employee_code_not_blank CHECK (BTRIM(employee_code) <> '')
 );
 
--- Calendario rotativo. Los únicos turnos posibles son DIA y NOCHE.
+-- Rotating schedule. The only shift types are DAY and NIGHT.
 CREATE TABLE worker_shift_assignments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     worker_id UUID NOT NULL REFERENCES worker_information(user_id) ON DELETE CASCADE,
     shift_type shift_type NOT NULL,
+    status shift_status NOT NULL DEFAULT 'OPEN',
     work_date DATE NOT NULL,
     assigned_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     notes TEXT,
@@ -117,9 +119,9 @@ CREATE TABLE meal_service_rules (
 
 INSERT INTO meal_service_rules (meal_type, claim_start, claim_end, description)
 VALUES
-    ('DESAYUNO', '06:00', '10:00', 'Disponible de 06:00 a 10:00, hora de Perú.'),
-    ('TARDE', '12:00', '15:00', 'Disponible de 12:00 a 15:00, hora de Perú.'),
-    ('NOCHE', '18:00', '22:00', 'Disponible de 18:00 a 22:00, hora de Perú.');
+    ('BREAKFAST', '06:00', '09:00', 'Available from 06:00 to 09:00, Peru time.'),
+    ('LUNCH', '12:00', '15:00', 'Available from 12:00 to 15:00, Peru time.'),
+    ('DINNER', '20:00', '23:00', 'Available from 20:00 to 23:00, Peru time.');
 
 -- Registro único por trabajador, comida y fecha de servicio.
 CREATE TABLE meal_claims (
@@ -129,17 +131,18 @@ CREATE TABLE meal_claims (
     meal_type meal_type NOT NULL REFERENCES meal_service_rules(meal_type) ON DELETE RESTRICT,
     service_date DATE NOT NULL,
     claimed_at TIMESTAMPTZ,
-    status meal_claim_status NOT NULL DEFAULT 'REQUESTED',
+    status meal_claim_status NOT NULL DEFAULT 'CREATED',
     validated_at TIMESTAMPTZ,
     validated_by UUID REFERENCES users(id) ON DELETE RESTRICT,
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT meal_claims_status_consistent CHECK (
-        (status = 'REQUESTED' AND claimed_at IS NOT NULL AND validated_at IS NULL AND validated_by IS NULL)
+        (status = 'CREATED' AND claimed_at IS NULL AND validated_at IS NULL AND validated_by IS NULL)
+        OR (status = 'CLAIMED' AND claimed_at IS NOT NULL AND validated_at IS NULL AND validated_by IS NULL)
         OR (status = 'VALIDATED' AND claimed_at IS NOT NULL AND validated_at IS NOT NULL AND validated_by IS NOT NULL)
-        OR (status = 'NOT_CONSUMED' AND claimed_at IS NULL AND validated_at IS NULL AND validated_by IS NULL)
-        OR (status = 'REQUESTED_BUT_NOT_VALIDATED' AND claimed_at IS NOT NULL AND validated_at IS NULL AND validated_by IS NULL)
+        OR (status = 'NOT_CLAIMED' AND claimed_at IS NULL AND validated_at IS NULL AND validated_by IS NULL)
+        OR (status = 'CLAIMED_BUT_NOT_VALIDATED' AND claimed_at IS NOT NULL AND validated_at IS NULL AND validated_by IS NULL)
     ),
     CONSTRAINT meal_claims_once_per_day UNIQUE (worker_id, meal_type, service_date)
 );

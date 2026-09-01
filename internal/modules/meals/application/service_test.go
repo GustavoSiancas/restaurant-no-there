@@ -20,7 +20,7 @@ type fakeMealsRepository struct {
 }
 
 func (f *fakeMealsRepository) FindRule(context.Context, domain.MealType) (*domain.ServiceRule, error) {
-	return &domain.ServiceRule{ClaimStart: "06:00:00", ClaimEnd: "10:00:00", Timezone: "America/Lima", Active: true}, nil
+	return &domain.ServiceRule{ClaimStart: "06:00:00", ClaimEnd: "09:00:00", Timezone: "America/Lima", Active: true}, nil
 }
 func (f *fakeMealsRepository) ListRules(context.Context) ([]domain.ServiceRule, error) {
 	return f.rules, nil
@@ -105,9 +105,9 @@ func TestClaimRejectsOutsideMealWindow(t *testing.T) {
 
 func TestSchedulerClosesOnlyExpiredWindows(t *testing.T) {
 	repo := &fakeMealsRepository{rules: []domain.ServiceRule{
-		{MealType: domain.Breakfast, ClaimEnd: "10:00:00", Active: true},
-		{MealType: domain.Afternoon, ClaimEnd: "15:00:00", Active: true},
-		{MealType: domain.Night, ClaimEnd: "22:00:00", Active: true},
+		{MealType: domain.Breakfast, ClaimEnd: "09:00:00", Active: true},
+		{MealType: domain.Lunch, ClaimEnd: "15:00:00", Active: true},
+		{MealType: domain.Dinner, ClaimEnd: "22:00:00", Active: true},
 	}}
 	service := NewService(repo)
 	service.now = func() time.Time { return time.Date(2026, 8, 31, 13, 0, 0, 0, time.FixedZone("UTC-5", -5*60*60)) }
@@ -120,8 +120,23 @@ func TestSchedulerClosesOnlyExpiredWindows(t *testing.T) {
 	}
 }
 
+func TestSchedulerKeepsClaimOpenDuringValidationGracePeriod(t *testing.T) {
+	repo := &fakeMealsRepository{rules: []domain.ServiceRule{
+		{MealType: domain.Breakfast, ClaimEnd: "09:00:00", Active: true},
+	}}
+	service := NewService(repo, func() time.Time {
+		return time.Date(2026, 8, 31, 9, 15, 0, 0, time.FixedZone("UTC-5", -5*60*60))
+	})
+	if _, err := service.CloseExpiredMealWindows(context.Background(), 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.closed) != 0 {
+		t.Fatalf("claim was finalized during validation grace period: %v", repo.closed)
+	}
+}
+
 func TestSchedulerSkipsInactiveRules(t *testing.T) {
-	repo := &fakeMealsRepository{rules: []domain.ServiceRule{{MealType: domain.Breakfast, ClaimEnd: "10:00:00", Active: false}}}
+	repo := &fakeMealsRepository{rules: []domain.ServiceRule{{MealType: domain.Breakfast, ClaimEnd: "09:00:00", Active: false}}}
 	service := NewService(repo, func() time.Time { return time.Date(2026, 8, 31, 13, 0, 0, 0, time.FixedZone("UTC-5", -5*60*60)) })
 	created, err := service.CloseExpiredMealWindows(context.Background(), 0)
 	if err != nil {
@@ -133,7 +148,7 @@ func TestSchedulerSkipsInactiveRules(t *testing.T) {
 }
 
 func TestWorkerStatusSkipsInactiveRules(t *testing.T) {
-	repo := &fakeMealsRepository{eligible: true, rules: []domain.ServiceRule{{MealType: domain.Breakfast, ClaimStart: "06:00:00", ClaimEnd: "10:00:00", Timezone: "America/Lima", Active: false}}}
+	repo := &fakeMealsRepository{eligible: true, rules: []domain.ServiceRule{{MealType: domain.Breakfast, ClaimStart: "06:00:00", ClaimEnd: "09:00:00", Timezone: "America/Lima", Active: false}}}
 	service := NewService(repo, func() time.Time { return time.Date(2026, 9, 2, 7, 0, 0, 0, time.FixedZone("UTC-5", -5*60*60)) })
 	status, err := service.WorkerStatus(context.Background(), "worker")
 	if err != nil {
@@ -155,7 +170,7 @@ func TestClaimRejectsWorkerWithoutEligibleShift(t *testing.T) {
 }
 
 func TestWorkerStatusShowsAvailableUnclaimedBreakfast(t *testing.T) {
-	repo := &fakeMealsRepository{eligible: true, rules: []domain.ServiceRule{{MealType: domain.Breakfast, ClaimStart: "06:00:00", ClaimEnd: "10:00:00", Timezone: "America/Lima", Active: true}}}
+	repo := &fakeMealsRepository{eligible: true, rules: []domain.ServiceRule{{MealType: domain.Breakfast, ClaimStart: "06:00:00", ClaimEnd: "09:00:00", Timezone: "America/Lima", Active: true}}}
 	service := NewService(repo)
 	service.now = func() time.Time { return time.Date(2026, 9, 2, 6, 30, 0, 0, time.FixedZone("UTC-5", -5*60*60)) }
 	status, err := service.WorkerStatus(context.Background(), "worker")
@@ -169,16 +184,19 @@ func TestWorkerStatusShowsAvailableUnclaimedBreakfast(t *testing.T) {
 		t.Fatalf("unexpected meal status: %+v", status.CurrentMeal)
 	}
 }
+func (f *fakeMealsRepository) CloseShiftsAndCreateClaims(context.Context, time.Time, time.Time) (int64, error) {
+	return 0, nil
+}
 
 func TestNightShiftRemainsActiveThroughNextDayBreakfast(t *testing.T) {
 	previousDay := time.Date(2026, 9, 1, 0, 0, 0, 0, time.FixedZone("UTC-5", -5*60*60))
 	repo := &fakeMealsRepository{
 		eligible: true,
-		shift:    &domain.CurrentShift{AssignmentID: "night-assignment", ShiftType: "NOCHE", WorkDate: previousDay},
+		shift:    &domain.CurrentShift{AssignmentID: "night-assignment", ShiftType: "NIGHT", WorkDate: previousDay},
 		rules: []domain.ServiceRule{
-			{MealType: domain.Breakfast, ClaimStart: "06:00:00", ClaimEnd: "10:00:00", Timezone: "America/Lima", Active: true},
-			{MealType: domain.Afternoon, ClaimStart: "12:00:00", ClaimEnd: "15:00:00", Timezone: "America/Lima", Active: true},
-			{MealType: domain.Night, ClaimStart: "18:00:00", ClaimEnd: "22:00:00", Timezone: "America/Lima", Active: true},
+			{MealType: domain.Breakfast, ClaimStart: "06:00:00", ClaimEnd: "09:00:00", Timezone: "America/Lima", Active: true},
+			{MealType: domain.Lunch, ClaimStart: "12:00:00", ClaimEnd: "15:00:00", Timezone: "America/Lima", Active: true},
+			{MealType: domain.Dinner, ClaimStart: "20:00:00", ClaimEnd: "23:00:00", Timezone: "America/Lima", Active: true},
 		},
 	}
 	service := NewService(repo, func() time.Time {
@@ -207,11 +225,11 @@ func TestDayShiftIsActiveFromBreakfastStartThroughAfternoonEnd(t *testing.T) {
 	today := time.Date(2026, 9, 2, 0, 0, 0, 0, time.FixedZone("UTC-5", -5*60*60))
 	repo := &fakeMealsRepository{
 		eligible: true,
-		shift:    &domain.CurrentShift{AssignmentID: "day-assignment", ShiftType: "DIA", WorkDate: today},
+		shift:    &domain.CurrentShift{AssignmentID: "day-assignment", ShiftType: "DAY", WorkDate: today},
 		rules: []domain.ServiceRule{
-			{MealType: domain.Breakfast, ClaimStart: "06:00:00", ClaimEnd: "10:00:00", Timezone: "America/Lima", Active: true},
-			{MealType: domain.Afternoon, ClaimStart: "12:00:00", ClaimEnd: "15:00:00", Timezone: "America/Lima", Active: true},
-			{MealType: domain.Night, ClaimStart: "18:00:00", ClaimEnd: "22:00:00", Timezone: "America/Lima", Active: true},
+			{MealType: domain.Breakfast, ClaimStart: "06:00:00", ClaimEnd: "09:00:00", Timezone: "America/Lima", Active: true},
+			{MealType: domain.Lunch, ClaimStart: "12:00:00", ClaimEnd: "15:00:00", Timezone: "America/Lima", Active: true},
+			{MealType: domain.Dinner, ClaimStart: "20:00:00", ClaimEnd: "23:00:00", Timezone: "America/Lima", Active: true},
 		},
 	}
 	service := NewService(repo, func() time.Time {
@@ -222,7 +240,7 @@ func TestDayShiftIsActiveFromBreakfastStartThroughAfternoonEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !status.OnShift || status.CurrentShift == nil || status.CurrentShift.ShiftType != "DIA" {
+	if !status.OnShift || status.CurrentShift == nil || status.CurrentShift.ShiftType != "DAY" {
 		t.Fatalf("day shift should remain active between meal windows: %+v", status)
 	}
 	if len(status.AssignedMeals) != 2 ||

@@ -59,18 +59,18 @@ func (r *Repository) FindWorkerInformation(ctx context.Context, id string) (*dom
 	return &i, translate(err)
 }
 func (r *Repository) CreateAssignment(ctx context.Context, a *domain.WorkerShiftAssignment) error {
-	err := r.db.QueryRow(ctx, `INSERT INTO worker_shift_assignments (worker_id,shift_type,work_date,assigned_by,notes) VALUES ($1,$2,$3,$4,$5) RETURNING id,created_at,updated_at`, a.WorkerID, a.ShiftType, a.WorkDate, a.AssignedBy, a.Notes).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
+	err := r.db.QueryRow(ctx, `INSERT INTO worker_shift_assignments (worker_id,shift_type,work_date,assigned_by,notes) VALUES ($1,$2,$3,$4,$5) RETURNING id,status,created_at,updated_at`, a.WorkerID, a.ShiftType, a.WorkDate, a.AssignedBy, a.Notes).Scan(&a.ID, &a.Status, &a.CreatedAt, &a.UpdatedAt)
 	return translate(err)
 }
 func (r *Repository) FindAssignmentByID(ctx context.Context, id string) (*domain.WorkerShiftAssignment, error) {
-	return scanAssignment(r.db.QueryRow(ctx, `SELECT id,worker_id,shift_type,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE id=$1`, id))
+	return scanAssignment(r.db.QueryRow(ctx, `SELECT id,worker_id,shift_type,status,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE id=$1`, id))
 }
 func (r *Repository) UpdateAssignment(ctx context.Context, a *domain.WorkerShiftAssignment) error {
-	err := r.db.QueryRow(ctx, `UPDATE worker_shift_assignments SET shift_type=$2,work_date=$3,notes=$4,updated_at=NOW() WHERE id=$1 RETURNING updated_at`, a.ID, a.ShiftType, a.WorkDate, a.Notes).Scan(&a.UpdatedAt)
+	err := r.db.QueryRow(ctx, `UPDATE worker_shift_assignments SET shift_type=$2,work_date=$3,notes=$4,updated_at=NOW() WHERE id=$1 AND status='OPEN' RETURNING updated_at`, a.ID, a.ShiftType, a.WorkDate, a.Notes).Scan(&a.UpdatedAt)
 	return translate(err)
 }
 func (r *Repository) DeleteAssignment(ctx context.Context, id string, today time.Time) error {
-	result, err := r.db.Exec(ctx, `DELETE FROM worker_shift_assignments WHERE id=$1 AND work_date>$2`, id, today)
+	result, err := r.db.Exec(ctx, `DELETE FROM worker_shift_assignments WHERE id=$1 AND status='OPEN'`, id)
 	if err != nil {
 		return err
 	}
@@ -81,14 +81,14 @@ func (r *Repository) DeleteAssignment(ctx context.Context, id string, today time
 }
 func scanAssignment(row pgx.Row) (*domain.WorkerShiftAssignment, error) {
 	var a domain.WorkerShiftAssignment
-	err := row.Scan(&a.ID, &a.WorkerID, &a.ShiftType, &a.WorkDate, &a.AssignedBy, &a.Notes, &a.CreatedAt, &a.UpdatedAt)
+	err := row.Scan(&a.ID, &a.WorkerID, &a.ShiftType, &a.Status, &a.WorkDate, &a.AssignedBy, &a.Notes, &a.CreatedAt, &a.UpdatedAt)
 	return &a, translate(err)
 }
 func (r *Repository) FindAssignmentByWorkerAndDate(ctx context.Context, workerID string, date time.Time) (*domain.WorkerShiftAssignment, error) {
-	return scanAssignment(r.db.QueryRow(ctx, `SELECT id,worker_id,shift_type,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE worker_id=$1 AND work_date=$2`, workerID, date))
+	return scanAssignment(r.db.QueryRow(ctx, `SELECT id,worker_id,shift_type,status,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE worker_id=$1 AND work_date=$2`, workerID, date))
 }
 func (r *Repository) ListAssignments(ctx context.Context, from, to time.Time) ([]domain.WorkerShiftAssignment, error) {
-	rows, err := r.db.Query(ctx, `SELECT id,worker_id,shift_type,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE work_date BETWEEN $1 AND $2 ORDER BY work_date,worker_id`, from, to)
+	rows, err := r.db.Query(ctx, `SELECT id,worker_id,shift_type,status,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE work_date BETWEEN $1 AND $2 ORDER BY work_date,worker_id`, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (r *Repository) ListWorkerAssignments(ctx context.Context, workerID, period
 		operator = ">="
 		order = "ASC"
 	}
-	query := `SELECT id,worker_id,shift_type,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE worker_id=$1 AND work_date ` + operator + ` $2 ORDER BY work_date ` + order
+	query := `SELECT id,worker_id,shift_type,status,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE worker_id=$1 AND work_date ` + operator + ` $2 ORDER BY work_date ` + order
 	rows, err := r.db.Query(ctx, query, workerID, today)
 	if err != nil {
 		return nil, err
@@ -127,7 +127,7 @@ func (r *Repository) ListWorkerAssignments(ctx context.Context, workerID, period
 	return items, rows.Err()
 }
 func (r *Repository) ListWorkerAssignmentsRange(ctx context.Context, workerID string, from, to time.Time) ([]domain.WorkerShiftAssignment, error) {
-	rows, err := r.db.Query(ctx, `SELECT id,worker_id,shift_type,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE worker_id=$1 AND work_date BETWEEN $2 AND $3 ORDER BY work_date ASC`, workerID, from, to)
+	rows, err := r.db.Query(ctx, `SELECT id,worker_id,shift_type,status,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE worker_id=$1 AND work_date BETWEEN $2 AND $3 ORDER BY work_date ASC`, workerID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +176,7 @@ func (r *Repository) ListShiftPreview(
 			AND dni.active = TRUE
 
 		WHERE a.work_date = $1
-			OR (a.shift_type = 'NOCHE' AND a.work_date = ($1::date - 1))
+			OR (a.shift_type = 'NIGHT' AND a.work_date = ($1::date - 1))
 
 		ORDER BY
 			a.work_date,

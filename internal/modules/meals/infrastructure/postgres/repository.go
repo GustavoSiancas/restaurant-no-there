@@ -52,11 +52,11 @@ func (r *Repository) FindEligibleAssignment(ctx context.Context, workerID string
 	var id string
 	err := r.db.QueryRow(ctx, `SELECT a.id FROM worker_shift_assignments a
 		WHERE a.worker_id=$1 AND (
-			($2='DESAYUNO' AND ((a.shift_type='DIA' AND a.work_date=$3) OR (a.shift_type='NOCHE' AND a.work_date=($3::date - 1))))
-			OR ($2='TARDE' AND a.shift_type='DIA' AND a.work_date=$3)
-			OR ($2='NOCHE' AND a.shift_type='NOCHE' AND a.work_date=$3)
+			($2='BREAKFAST' AND ((a.shift_type='DAY' AND a.work_date=$3) OR (a.shift_type='NIGHT' AND a.work_date=($3::date - 1))))
+			OR ($2='LUNCH' AND a.shift_type='DAY' AND a.work_date=$3)
+			OR ($2='DINNER' AND a.shift_type='NIGHT' AND a.work_date=$3)
 		)
-		ORDER BY CASE WHEN a.shift_type='NOCHE' THEN 0 ELSE 1 END
+		ORDER BY CASE WHEN a.shift_type='NIGHT' THEN 0 ELSE 1 END
 		LIMIT 1`, workerID, mealType, date).Scan(&id)
 	return id, translate(err)
 }
@@ -69,7 +69,9 @@ func (r *Repository) FindCurrentShift(ctx context.Context, workerID, shiftType s
 	return &shift, err
 }
 func (r *Repository) CreateClaim(ctx context.Context, c *domain.Claim) error {
-	err := r.db.QueryRow(ctx, `INSERT INTO meal_claims(worker_id,shift_assignment_id,meal_type,service_date,claimed_at,notes) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,status,validated_at,validated_by,created_at,updated_at`, c.WorkerID, c.ShiftAssignmentID, c.MealType, c.ServiceDate, c.ClaimedAt, c.Notes).Scan(&c.ID, &c.Status, &c.ValidatedAt, &c.ValidatedBy, &c.CreatedAt, &c.UpdatedAt)
+	err := r.db.QueryRow(ctx, `UPDATE meal_claims SET status='CLAIMED',claimed_at=$4,notes=$5,updated_at=NOW()
+		WHERE worker_id=$1 AND shift_assignment_id=$2 AND meal_type=$3 AND status='CREATED'
+		RETURNING id,status,validated_at,validated_by,created_at,updated_at`, c.WorkerID, c.ShiftAssignmentID, c.MealType, c.ClaimedAt, c.Notes).Scan(&c.ID, &c.Status, &c.ValidatedAt, &c.ValidatedBy, &c.CreatedAt, &c.UpdatedAt)
 	return translate(err)
 }
 func scanClaim(row pgx.Row) (*domain.Claim, error) {
@@ -91,6 +93,41 @@ func (r *Repository) FindWorkerTicketIdentity(ctx context.Context, workerID stri
 	return &identity, translate(err)
 }
 
+// CloseShiftsAndCreateClaims is idempotent, so the scheduler can safely retry
+// after restarts. At midnight, today's roster becomes immutable and receives
+// all meal claim records implied by its shift type.
+func (r *Repository) CloseShiftsAndCreateClaims(ctx context.Context, throughDate, closedAt time.Time) (int64, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err = tx.Exec(ctx, `UPDATE worker_shift_assignments SET status='CLOSED',updated_at=$2
+		WHERE status='OPEN' AND work_date <= $1::date`, throughDate, closedAt); err != nil {
+		return 0, err
+	}
+	result, err := tx.Exec(ctx, `INSERT INTO meal_claims
+		(worker_id,shift_assignment_id,meal_type,service_date,status,notes,created_at,updated_at)
+		SELECT a.worker_id,a.id,m.meal_type,m.service_date,'CREATED',
+			'Created automatically when the shift was closed',$2,$2
+		FROM worker_shift_assignments a
+		CROSS JOIN LATERAL (
+			SELECT 'BREAKFAST'::meal_type, a.work_date WHERE a.shift_type='DAY'
+			UNION ALL SELECT 'LUNCH'::meal_type, a.work_date WHERE a.shift_type='DAY'
+			UNION ALL SELECT 'DINNER'::meal_type, a.work_date WHERE a.shift_type='NIGHT'
+			UNION ALL SELECT 'BREAKFAST'::meal_type, a.work_date + 1 WHERE a.shift_type='NIGHT'
+		) AS m(meal_type,service_date)
+		WHERE a.status='CLOSED' AND a.work_date <= $1::date
+		ON CONFLICT (worker_id,meal_type,service_date) DO NOTHING`, throughDate, closedAt)
+	if err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const orderColumns = `c.id,c.worker_id,c.shift_assignment_id,c.meal_type,c.service_date,c.claimed_at,c.status,c.validated_at,c.validated_by,c.notes,c.created_at,c.updated_at,
 	u.id,BTRIM(p.first_name || ' ' || p.last_name),REPEAT('*',GREATEST(LENGTH(dni.identifier)-4,0)) || RIGHT(dni.identifier,4)`
 
@@ -107,8 +144,8 @@ func scanOrder(row pgx.Row) (*domain.MealOrder, error) {
 func orderService(mealType domain.MealType) domain.ClaimPreviewService {
 	switch mealType {
 	case domain.Breakfast:
-		return domain.ClaimPreviewService{Type: "BREAKFAST", Name: "DESAYUNO"}
-	case domain.Afternoon:
+		return domain.ClaimPreviewService{Type: "BREAKFAST", Name: "BREAKFAST"}
+	case domain.Lunch:
 		return domain.ClaimPreviewService{Type: "LUNCH", Name: "ALMUERZO"}
 	default:
 		return domain.ClaimPreviewService{Type: "DINNER", Name: "CENA"}
@@ -144,9 +181,9 @@ func (r *Repository) ValidateOrder(ctx context.Context, id, validatedBy string, 
 	return scanOrder(r.db.QueryRow(ctx, `WITH updated AS (
 		UPDATE meal_claims c SET status='VALIDATED',validated_at=$2,validated_by=$3,updated_at=NOW()
 		FROM meal_service_rules r
-		WHERE c.id=$1 AND c.status='REQUESTED' AND r.meal_type=c.meal_type
+		WHERE c.id=$1 AND c.status='CLAIMED' AND r.meal_type=c.meal_type
 		  AND $2 >= ((c.service_date + r.claim_start) AT TIME ZONE r.timezone)
-		  AND $2 < ((c.service_date + r.claim_end) AT TIME ZONE r.timezone)
+		  AND $2 < (((c.service_date + r.claim_end) AT TIME ZONE r.timezone) + INTERVAL '30 minutes')
 		RETURNING c.*
 	) SELECT `+orderColumns+` FROM updated c `+orderJoins, id, validatedAt, validatedBy))
 }
@@ -154,13 +191,13 @@ func (r *Repository) ValidateOrder(ctx context.Context, id, validatedBy string, 
 func (r *Repository) EarliestPendingServiceDate(ctx context.Context) (*time.Time, error) {
 	var date *time.Time
 	err := r.db.QueryRow(ctx, `WITH eligible AS (
-		SELECT worker_id,work_date AS service_date,'DESAYUNO'::meal_type meal_type FROM worker_shift_assignments WHERE shift_type='DIA'
-		UNION SELECT worker_id,work_date,'TARDE'::meal_type FROM worker_shift_assignments WHERE shift_type='DIA'
-		UNION SELECT worker_id,work_date,'NOCHE'::meal_type FROM worker_shift_assignments WHERE shift_type='NOCHE'
-		UNION SELECT worker_id,work_date+1,'DESAYUNO'::meal_type FROM worker_shift_assignments WHERE shift_type='NOCHE'
+		SELECT worker_id,work_date AS service_date,'BREAKFAST'::meal_type meal_type FROM worker_shift_assignments WHERE shift_type='DAY' AND status='CLOSED'
+		UNION SELECT worker_id,work_date,'LUNCH'::meal_type FROM worker_shift_assignments WHERE shift_type='DAY' AND status='CLOSED'
+		UNION SELECT worker_id,work_date,'DINNER'::meal_type FROM worker_shift_assignments WHERE shift_type='NIGHT' AND status='CLOSED'
+		UNION SELECT worker_id,work_date+1,'BREAKFAST'::meal_type FROM worker_shift_assignments WHERE shift_type='NIGHT' AND status='CLOSED'
 	) SELECT MIN(e.service_date) FROM eligible e
 	LEFT JOIN meal_claims c ON c.worker_id=e.worker_id AND c.meal_type=e.meal_type AND c.service_date=e.service_date
-	WHERE c.id IS NULL OR c.status='REQUESTED'`).Scan(&date)
+	WHERE c.id IS NULL OR c.status IN ('CREATED','CLAIMED')`).Scan(&date)
 	return date, err
 }
 
@@ -171,23 +208,16 @@ func (r *Repository) CloseMealWindow(ctx context.Context, mealType domain.MealTy
 		return result, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	inserted, err := tx.Exec(ctx, `INSERT INTO meal_claims
-		(worker_id,shift_assignment_id,meal_type,service_date,claimed_at,status,notes,created_at,updated_at)
-		SELECT a.worker_id,a.id,$1::meal_type,$2::date,NULL,'NOT_CONSUMED','Generado automáticamente al cerrar el horario de comida',$3::timestamptz,$3::timestamptz
-		FROM worker_shift_assignments a
-		WHERE (
-			($1::meal_type='DESAYUNO' AND ((a.shift_type='DIA' AND a.work_date=$2::date) OR (a.shift_type='NOCHE' AND a.work_date=($2::date - 1))))
-			OR ($1::meal_type='TARDE' AND a.shift_type='DIA' AND a.work_date=$2::date)
-			OR ($1::meal_type='NOCHE' AND a.shift_type='NOCHE' AND a.work_date=$2::date)
-		)
-		ON CONFLICT (worker_id,meal_type,service_date) DO NOTHING`, mealType, serviceDate, closedAt)
+	created, err := tx.Exec(ctx, `UPDATE meal_claims
+		SET status='NOT_CLAIMED',updated_at=$3::timestamptz
+		WHERE meal_type=$1::meal_type AND service_date=$2::date AND status='CREATED'`, mealType, serviceDate, closedAt)
 	if err != nil {
 		return result, err
 	}
-	result.NotConsumed = inserted.RowsAffected()
+	result.NotConsumed = created.RowsAffected()
 	updated, err := tx.Exec(ctx, `UPDATE meal_claims
-		SET status='REQUESTED_BUT_NOT_VALIDATED',updated_at=$3::timestamptz
-		WHERE meal_type=$1::meal_type AND service_date=$2::date AND status='REQUESTED'`, mealType, serviceDate, closedAt)
+		SET status='CLAIMED_BUT_NOT_VALIDATED',updated_at=$3::timestamptz
+		WHERE meal_type=$1::meal_type AND service_date=$2::date AND status='CLAIMED'`, mealType, serviceDate, closedAt)
 	if err != nil {
 		return result, err
 	}
@@ -211,9 +241,9 @@ func (r *Repository) DetailedReportSummary(ctx context.Context, filters domain.R
 	var summary domain.DetailedReportSummary
 	err := r.db.QueryRow(ctx, `SELECT COUNT(*),
 		COUNT(*) FILTER(WHERE c.status='VALIDATED'),
-		COUNT(*) FILTER(WHERE c.status='REQUESTED_BUT_NOT_VALIDATED'),
-		COUNT(*) FILTER(WHERE c.status='NOT_CONSUMED'),
-		COUNT(*) FILTER(WHERE c.status IN ('REQUESTED_BUT_NOT_VALIDATED','NOT_CONSUMED'))`+detailedReportWhere,
+		COUNT(*) FILTER(WHERE c.status='CLAIMED_BUT_NOT_VALIDATED'),
+		COUNT(*) FILTER(WHERE c.status='NOT_CLAIMED'),
+		COUNT(*) FILTER(WHERE c.status IN ('CLAIMED_BUT_NOT_VALIDATED','NOT_CLAIMED'))`+detailedReportWhere,
 		filters.From, filters.To, filters.MealType, filters.ShiftType).
 		Scan(&summary.TotalEligible, &summary.Consumed, &summary.RequestedNotValidated, &summary.NotClaimed, &summary.DidNotConsume)
 	return summary, err
@@ -246,17 +276,17 @@ func (r *Repository) DetailedReportRows(ctx context.Context, filters domain.Repo
 }
 func (r *Repository) Report(ctx context.Context, from, to time.Time) ([]domain.ReportRow, error) {
 	rows, err := r.db.Query(ctx, `WITH eligible AS (
-		SELECT worker_id, work_date AS service_date, 'DESAYUNO'::meal_type AS meal_type FROM worker_shift_assignments WHERE shift_type='DIA'
+		SELECT worker_id, work_date AS service_date, 'BREAKFAST'::meal_type AS meal_type FROM worker_shift_assignments WHERE shift_type='DAY' AND status='CLOSED'
 		UNION
-		SELECT worker_id, work_date, 'TARDE'::meal_type FROM worker_shift_assignments WHERE shift_type='DIA'
+		SELECT worker_id, work_date, 'LUNCH'::meal_type FROM worker_shift_assignments WHERE shift_type='DAY' AND status='CLOSED'
 		UNION
-		SELECT worker_id, work_date, 'NOCHE'::meal_type FROM worker_shift_assignments WHERE shift_type='NOCHE'
+		SELECT worker_id, work_date, 'DINNER'::meal_type FROM worker_shift_assignments WHERE shift_type='NIGHT' AND status='CLOSED'
 		UNION
-		SELECT worker_id, work_date + 1, 'DESAYUNO'::meal_type FROM worker_shift_assignments WHERE shift_type='NOCHE'
-	), types(meal_type) AS (VALUES ('DESAYUNO'::meal_type),('TARDE'::meal_type),('NOCHE'::meal_type))
+		SELECT worker_id, work_date + 1, 'BREAKFAST'::meal_type FROM worker_shift_assignments WHERE shift_type='NIGHT' AND status='CLOSED'
+	), types(meal_type) AS (VALUES ('BREAKFAST'::meal_type),('LUNCH'::meal_type),('DINNER'::meal_type))
 	SELECT t.meal_type, COUNT(e.worker_id),
-		COUNT(c.id) FILTER(WHERE c.status IN ('REQUESTED','VALIDATED','REQUESTED_BUT_NOT_VALIDATED')),
-		COUNT(e.worker_id)-COUNT(c.id) FILTER(WHERE c.status IN ('REQUESTED','VALIDATED','REQUESTED_BUT_NOT_VALIDATED'))
+		COUNT(c.id) FILTER(WHERE c.status IN ('CLAIMED','VALIDATED','CLAIMED_BUT_NOT_VALIDATED')),
+		COUNT(e.worker_id)-COUNT(c.id) FILTER(WHERE c.status IN ('CLAIMED','VALIDATED','CLAIMED_BUT_NOT_VALIDATED'))
 	FROM types t LEFT JOIN eligible e ON e.meal_type=t.meal_type AND e.service_date BETWEEN $1 AND $2
 	LEFT JOIN meal_claims c ON c.worker_id=e.worker_id AND c.meal_type=e.meal_type AND c.service_date=e.service_date
 	GROUP BY t.meal_type ORDER BY t.meal_type`, from, to)

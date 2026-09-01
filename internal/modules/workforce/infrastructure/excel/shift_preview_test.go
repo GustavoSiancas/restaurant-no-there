@@ -18,14 +18,14 @@ func TestBuildShiftPreviewSeparatesMealsIntoSheets(t *testing.T) {
 				ShiftType: domain.ShiftDay,
 				Worker:    domain.PreviewWorker{FullName: "Trabajador Día", DocumentNumber: "****1234", EmployeeCode: "EMP-1"},
 				AssignedMeals: []domain.PreviewMeal{
-					{MealType: "DESAYUNO", ServiceDate: date, Start: "06:00", End: "10:00"},
-					{MealType: "TARDE", ServiceDate: date, Start: "12:00", End: "15:00"},
+					{MealType: "BREAKFAST", ServiceDate: date, Start: "06:00", End: "09:00"},
+					{MealType: "LUNCH", ServiceDate: date, Start: "12:00", End: "15:00"},
 				},
 			},
 			{
 				ShiftType:     domain.ShiftNight,
 				Worker:        domain.PreviewWorker{FullName: "Trabajador Noche", DocumentNumber: "****5678", EmployeeCode: "EMP-2"},
-				AssignedMeals: []domain.PreviewMeal{{MealType: "NOCHE", ServiceDate: date, Start: "18:00", End: "22:00"}},
+				AssignedMeals: []domain.PreviewMeal{{MealType: "DINNER", ServiceDate: date, Start: "20:00", End: "23:00"}},
 			},
 		},
 	}

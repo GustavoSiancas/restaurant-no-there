@@ -10,5 +10,6 @@ DROP TABLE IF EXISTS users;
 DROP TYPE IF EXISTS meal_type;
 DROP TYPE IF EXISTS meal_claim_status;
 DROP TYPE IF EXISTS shift_type;
+DROP TYPE IF EXISTS shift_status;
 DROP TYPE IF EXISTS credential_type;
 DROP TYPE IF EXISTS user_role;

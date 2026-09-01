@@ -19,9 +19,9 @@ func BuildShiftPreview(report *domain.ShiftPreview) ([]byte, error) {
 	defer func() { _ = f.Close() }()
 
 	sheets := []mealSheet{
-		{name: "Desayunos", mealType: "DESAYUNO", displayName: "DESAYUNOS"},
-		{name: "Almuerzos", mealType: "TARDE", displayName: "ALMUERZOS"},
-		{name: "Cenas", mealType: "NOCHE", displayName: "CENAS"},
+		{name: "Desayunos", mealType: "BREAKFAST", displayName: "BREAKFASTS"},
+		{name: "Almuerzos", mealType: "LUNCH", displayName: "ALMUERZOS"},
+		{name: "Cenas", mealType: "DINNER", displayName: "CENAS"},
 	}
 	f.SetSheetName("Sheet1", sheets[0].name)
 	for _, definition := range sheets[1:] {

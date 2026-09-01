@@ -75,7 +75,7 @@ func (h *Handler) ConfirmPrint(c *gin.Context) {
 }
 
 func (h *Handler) ListOrders(c *gin.Context) {
-	orders, err := h.service.ListOrders(c, domain.ClaimStatus(c.DefaultQuery("status", string(domain.ClaimRequested))))
+	orders, err := h.service.ListOrders(c, domain.ClaimStatus(c.DefaultQuery("status", string(domain.ClaimClaimed))))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -106,12 +106,12 @@ func (h *Handler) ValidateOrder(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, core.ErrConflict) {
 			code, message := "MEAL_ORDER_ALREADY_VALIDATED", "el pedido ya fue entregado"
-			if order != nil && order.Status == domain.ClaimRequested {
+			if order != nil && order.Status == domain.ClaimClaimed {
 				code, message = "MEAL_ORDER_WINDOW_CLOSED", "el horario para validar el pedido ya terminó"
-			} else if order != nil && order.Status == domain.ClaimNotConsumed {
-				code, message = "MEAL_ORDER_NOT_CONSUMED", "el trabajador no recogió esta comida dentro del horario"
-			} else if order != nil && order.Status == domain.ClaimRequestedNotValidated {
-				code, message = "MEAL_ORDER_REQUESTED_NOT_VALIDATED", "el pedido no fue validado dentro del horario"
+			} else if order != nil && order.Status == domain.ClaimNotClaimed {
+				code, message = "MEAL_ORDER_NOT_CLAIMED", "el trabajador no recogió esta comida dentro del horario"
+			} else if order != nil && order.Status == domain.ClaimClaimedNotValidated {
+				code, message = "MEAL_ORDER_CLAIMED_NOT_VALIDATED", "el pedido no fue validado dentro del horario"
 			}
 			c.JSON(http.StatusConflict, gin.H{"error": gin.H{"code": code, "message": message, "order": order}})
 			return

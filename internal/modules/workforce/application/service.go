@@ -71,7 +71,7 @@ func (s *Service) AssignWorker(ctx context.Context, workerID string, shiftType d
 		return nil, fmt.Errorf("worker information must be registered first")
 	}
 	if shiftType != domain.ShiftDay && shiftType != domain.ShiftNight {
-		return nil, fmt.Errorf("shift_type must be DIA or NOCHE")
+		return nil, fmt.Errorf("shift_type must be DAY or NIGHT")
 	}
 	existingAssignment, err := s.repo.FindAssignmentByWorkerAndDate(ctx, workerID, date)
 	if err == nil {
@@ -94,9 +94,8 @@ func (s *Service) AssignWorker(ctx context.Context, workerID string, shiftType d
 
 func (s *Service) UpdateAssignment(ctx context.Context, id string, shiftType domain.ShiftType, date time.Time, notes string) (*domain.WorkerShiftAssignment, error) {
 	if shiftType != domain.ShiftDay && shiftType != domain.ShiftNight {
-		return nil, fmt.Errorf("shift_type must be DIA or NOCHE")
+		return nil, fmt.Errorf("shift_type must be DAY or NIGHT")
 	}
-	today := s.peruToday()
 	date = s.peruDate(date)
 
 	existing, err := s.repo.FindAssignmentByID(ctx, id)
@@ -105,14 +104,8 @@ func (s *Service) UpdateAssignment(ctx context.Context, id string, shiftType dom
 		return nil, err
 	}
 
-	existingDate := s.peruDate(existing.WorkDate)
-
-	if !CanManageAssignmentForDate(existingDate, today) {
-		return nil, ErrAssignmentOutsideAllowedWeek
-	}
-
-	if !CanManageAssignmentForDate(date, today) {
-		return nil, ErrAssignmentOutsideAllowedWeek
+	if existing.Status != domain.ShiftOpen {
+		return nil, core.ErrLocked
 	}
 	if occupied, findErr := s.repo.FindAssignmentByWorkerAndDate(ctx, existing.WorkerID, date); findErr == nil && occupied.ID != existing.ID {
 		return nil, &domain.AssignmentConflictError{Existing: *occupied}
@@ -129,20 +122,16 @@ func (s *Service) UpdateAssignment(ctx context.Context, id string, shiftType dom
 }
 
 func (s *Service) DeleteAssignment(ctx context.Context, id string) error {
-	today := s.peruToday()
-
 	assignment, err := s.repo.FindAssignmentByID(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	assignmentDate := s.peruDate(assignment.WorkDate)
-
-	if !CanManageAssignmentForDate(assignmentDate, today) {
-		return ErrAssignmentOutsideAllowedWeek
+	if assignment.Status != domain.ShiftOpen {
+		return core.ErrLocked
 	}
 
-	if err = s.repo.DeleteAssignment(ctx, id, today); err != nil {
+	if err = s.repo.DeleteAssignment(ctx, id, s.peruToday()); err != nil {
 		return err
 	}
 
@@ -226,9 +215,9 @@ func (s *Service) ShiftPreview(
 	mealFilter := make(map[string]bool)
 
 	for _, value := range mealTypes {
-		if value != "DESAYUNO" &&
-			value != "TARDE" &&
-			value != "NOCHE" {
+		if value != "BREAKFAST" &&
+			value != "LUNCH" &&
+			value != "DINNER" {
 
 			fmt.Printf(
 				"[SHIFT_PREVIEW] invalid meal_type=%s\n",
@@ -249,7 +238,7 @@ func (s *Service) ShiftPreview(
 
 	// ============================================================
 	// 3. TRAER LOS TURNOS DE LA FECHA
-	// Queremos DIA + NOCHE.
+	// Queremos DAY + DINNER.
 	//
 	// Si acá rows=0, el problema está en el repository.
 	// ============================================================
@@ -313,9 +302,9 @@ func (s *Service) ShiftPreview(
 	// ============================================================
 	summary := domain.ShiftPreviewSummary{
 		ByMeal: map[string]int{
-			"DESAYUNO": 0,
-			"TARDE":    0,
-			"NOCHE":    0,
+			"BREAKFAST": 0,
+			"LUNCH":     0,
+			"DINNER":    0,
 		},
 	}
 
@@ -345,26 +334,26 @@ func (s *Service) ShiftPreview(
 			// ====================================================
 			// REGLA DE COMIDAS SEGÚN TURNO
 			//
-			// DIA:
-			// - DESAYUNO
-			// - TARDE / ALMUERZO
+			// DAY:
+			// - BREAKFAST
+			// - LUNCH / ALMUERZO
 			//
-			// NOCHE:
-			// - NOCHE / CENA
-			// - DESAYUNO del día siguiente
+			// DINNER:
+			// - DINNER / CENA
+			// - BREAKFAST del día siguiente
 			// ====================================================
 			eligible := false
 
 			if row.ShiftType == domain.ShiftDay {
 				eligible =
-					rule.MealType == "DESAYUNO" ||
-						rule.MealType == "TARDE"
+					rule.MealType == "BREAKFAST" ||
+						rule.MealType == "LUNCH"
 			}
 
 			if row.ShiftType == domain.ShiftNight {
 				eligible =
-					rule.MealType == "NOCHE" ||
-						rule.MealType == "DESAYUNO"
+					rule.MealType == "DINNER" ||
+						rule.MealType == "BREAKFAST"
 			}
 
 			fmt.Printf(
@@ -383,7 +372,7 @@ func (s *Service) ShiftPreview(
 
 			// El desayuno de turno noche corresponde al día siguiente.
 			if row.ShiftType == domain.ShiftNight &&
-				rule.MealType == "DESAYUNO" {
+				rule.MealType == "BREAKFAST" {
 				serviceDate = serviceDate.AddDate(0, 0, 1)
 			}
 
@@ -418,11 +407,11 @@ func (s *Service) ShiftPreview(
 			displayName := ""
 
 			switch rule.MealType {
-			case "DESAYUNO":
-				displayName = "DESAYUNO"
-			case "TARDE":
+			case "BREAKFAST":
+				displayName = "BREAKFAST"
+			case "LUNCH":
 				displayName = "ALMUERZO"
-			case "NOCHE":
+			case "NIGHT":
 				displayName = "CENA"
 			}
 

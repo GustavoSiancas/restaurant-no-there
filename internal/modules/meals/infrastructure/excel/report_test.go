@@ -14,7 +14,7 @@ func TestBuildDetailedReportCreatesSummaryAndDetailSheets(t *testing.T) {
 	report := &domain.DetailedReport{
 		Filters: domain.ReportFilters{From: date, To: date},
 		Summary: domain.DetailedReportSummary{TotalEligible: 1, NotClaimed: 1, DidNotConsume: 1},
-		Data:    []domain.DetailedReportRow{{ID: "claim", ServiceDate: date, MealType: domain.Afternoon, ShiftType: "DIA", Status: domain.ClaimNotConsumed, WorkerID: "worker", FullName: "María Pérez", DocumentNumber: "****5678", EmployeeCode: "EMP-001"}},
+		Data:    []domain.DetailedReportRow{{ID: "claim", ServiceDate: date, MealType: domain.Lunch, ShiftType: "DAY", Status: domain.ClaimNotClaimed, WorkerID: "worker", FullName: "María Pérez", DocumentNumber: "****5678", EmployeeCode: "EMP-001"}},
 	}
 	content, err := BuildDetailedReport(report)
 	if err != nil {

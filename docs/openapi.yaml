@@ -253,7 +253,7 @@ paths:
     get:
       tags: [Workforce, Meals]
       summary: Consultar mi turno y alimentación actual
-      description: Solo WORKER. Obtiene el usuario desde el token y evalúa turno, horario de comida, elegibilidad, reclamo y consumo usando hora de Perú. El turno DIA permanece activo desde el inicio de DESAYUNO hasta el fin de TARDE; el turno NOCHE, desde el inicio de NOCHE hasta el fin de DESAYUNO del día siguiente.
+      description: Solo WORKER. Obtiene el usuario desde el token y evalúa turno, horario de comida, elegibilidad, reclamo y consumo usando hora de Perú. El turno DAY permanece activo desde el inicio de BREAKFAST hasta el fin de LUNCH; el turno DINNER, desde el inicio de DINNER hasta el fin de BREAKFAST del día siguiente.
       security: [{bearerAuth: []}]
       responses:
         '200': {description: Estado actual, content: {application/json: {schema: {$ref: '#/components/schemas/WorkerCurrentStatus'}}}}
@@ -299,10 +299,10 @@ paths:
     get:
       tags: [Meals]
       summary: Listar pedidos de comida
-      description: COLLABORATOR y OWNER. Por defecto devuelve REQUESTED; la lista deja de incluir un pedido al validarse o al cerrar su horario.
+      description: COLLABORATOR y OWNER. Por defecto devuelve CLAIMED; la lista deja de incluir un pedido al validarse o al cerrar su horario.
       security: [{bearerAuth: []}]
       parameters:
-        - {name: status, in: query, required: false, schema: {type: string, enum: [REQUESTED, VALIDATED], default: REQUESTED}}
+        - {name: status, in: query, required: false, schema: {type: string, enum: [CLAIMED, VALIDATED], default: CLAIMED}}
       responses:
         '200': {description: Pedidos, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MealOrder'}}}}}
         '400': {$ref: '#/components/responses/BadRequest'}
@@ -316,8 +316,8 @@ paths:
       parameters:
         - {name: from, in: query, required: false, schema: {type: string, format: date}}
         - {name: to, in: query, required: false, schema: {type: string, format: date}}
-        - {name: meal_type, in: query, required: false, schema: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}}
-        - {name: shift_type, in: query, required: false, schema: {type: string, enum: [DIA, NOCHE]}}
+        - {name: meal_type, in: query, required: false, schema: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}
+        - {name: shift_type, in: query, required: false, schema: {type: string, enum: [DAY, NIGHT]}}
         - {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
         - {name: page_size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
       responses:
@@ -333,8 +333,8 @@ paths:
       parameters:
         - {name: from, in: query, required: false, schema: {type: string, format: date}}
         - {name: to, in: query, required: false, schema: {type: string, format: date}}
-        - {name: meal_type, in: query, required: false, schema: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}}
-        - {name: shift_type, in: query, required: false, schema: {type: string, enum: [DIA, NOCHE]}}
+        - {name: meal_type, in: query, required: false, schema: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}
+        - {name: shift_type, in: query, required: false, schema: {type: string, enum: [DAY, NIGHT]}}
       responses:
         '200':
           description: Archivo Excel con hojas Resumen y Detalle
@@ -357,7 +357,7 @@ paths:
     patch:
       tags: [Meals]
       summary: Entregar y validar un pedido
-      description: Solo COLLABORATOR. La transición REQUESTED a VALIDATED es atómica y solo es posible antes del cierre del horario.
+      description: Solo COLLABORATOR. La transición CLAIMED a VALIDATED es atómica. Puede validarse desde el inicio de la comida hasta 30 minutos después del fin de su ventana de reclamo.
       security: [{bearerAuth: []}]
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
       responses:
@@ -382,7 +382,7 @@ paths:
     get:
       tags: [Meals]
       summary: Listar las comidas que deben prepararse en una fecha
-      description: Incluye DESAYUNO y TARDE del turno DIA de la fecha, NOCHE del turno nocturno de la fecha y DESAYUNO de los turnos NOCHE del día anterior.
+      description: Incluye BREAKFAST y LUNCH del turno DAY de la fecha, DINNER del turno nocturno de la fecha y BREAKFAST de los turnos DINNER del día anterior.
       security: [{bearerAuth: []}]
       parameters:
         - {name: date, in: query, required: false, schema: {type: string, format: date}}
@@ -399,7 +399,7 @@ paths:
       parameters:
         - {name: date, in: query, required: false, schema: {type: string, format: date}}
 
-        - {name: meal_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}}}
+        - {name: meal_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}}
 
       responses:
         '200':
@@ -412,7 +412,7 @@ paths:
       security: [{bearerAuth: []}]
       parameters:
         - {name: date, in: query, required: false, schema: {type: string, format: date}}
-        - {name: meal_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}}}
+        - {name: meal_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}}
       responses:
         '200':
           description: Archivo XLSX Comidas Dia Actual
@@ -498,14 +498,14 @@ components:
       required: [worker_id, shift_type, work_date]
       properties:
         worker_id: {type: string, format: uuid}
-        shift_type: {type: string, enum: [DIA, NOCHE]}
+        shift_type: {type: string, enum: [DAY, NIGHT]}
         work_date: {type: string, format: date}
         notes: {type: string}
     UpdateAssignmentRequest:
       type: object
       required: [shift_type, work_date]
       properties:
-        shift_type: {type: string, enum: [DIA, NOCHE]}
+        shift_type: {type: string, enum: [DAY, NIGHT]}
         work_date: {type: string, format: date}
         notes: {type: string}
     WorkerCurrentStatus:
@@ -517,7 +517,7 @@ components:
           type: object
           properties:
             assignment_id: {type: string, format: uuid}
-            shift_type: {type: string, enum: [DIA, NOCHE]}
+            shift_type: {type: string, enum: [DAY, NIGHT]}
             work_date: {type: string, format: date}
         assigned_meals:
           type: array
@@ -525,14 +525,14 @@ components:
           items:
             type: object
             properties:
-              meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+              meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
               display_name: {type: string, enum: [Desayuno, Almuerzo, Cena]}
               service_date: {type: string, format: date}
         meal_window_open: {type: boolean}
         current_meal:
           type: object
           properties:
-            meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+            meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
             window_start: {type: string}
             window_end: {type: string}
             eligible: {type: boolean}
@@ -546,6 +546,7 @@ components:
           properties:
             id: {type: string, format: uuid}
             assigned_by: {type: string, format: uuid}
+            status: {type: string, enum: [OPEN, CLOSED]}
     AssignmentConflict:
       type: object
       properties:
@@ -560,13 +561,13 @@ components:
               type: object
               properties:
                 assignment_id: {type: string, format: uuid}
-                shift_type: {type: string, enum: [DIA, NOCHE]}
+                shift_type: {type: string, enum: [DAY, NIGHT]}
                 notes: {type: string}
     MealClaimPreview:
       type: object
       properties:
         redemptionId: {type: string, format: uuid}
-        ticketNumber: {type: string, example: TK-20260830-A1B2C3D4-TARDE}
+        ticketNumber: {type: string, example: TK-20260830-A1B2C3D4-LUNCH}
         status: {type: string, enum: [AUTHORIZED, DENIED]}
         worker:
           type: object
@@ -578,7 +579,7 @@ components:
           type: object
           properties:
             type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
-            name: {type: string, enum: [DESAYUNO, ALMUERZO, CENA]}
+            name: {type: string, enum: [BREAKFAST, ALMUERZO, CENA]}
         date: {type: string, example: '30/08/2026'}
         time: {type: string, example: '12:15 p.m.'}
         reason: {type: string}
@@ -586,7 +587,7 @@ components:
       type: object
       required: [meal_type, printed]
       properties:
-        meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+        meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
         printed: {type: boolean, example: true}
         notes: {type: string, example: Ticket impreso correctamente}
     MealPrintConfirmationResponse:
@@ -597,9 +598,9 @@ components:
     MealSchedule:
       type: object
       properties:
-        meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+        meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
         claim_start: {type: string, example: '06:00:00'}
-        claim_end: {type: string, example: '10:00:00'}
+        claim_end: {type: string, example: '09:00:00'}
         timezone: {type: string, example: America/Lima}
         description: {type: string}
         active: {type: boolean}
@@ -609,10 +610,10 @@ components:
         id: {type: string, format: uuid}
         worker_id: {type: string, format: uuid}
         shift_assignment_id: {type: string, format: uuid}
-        meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+        meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
         service_date: {type: string, format: date}
         claimed_at: {type: string, format: date-time}
-        status: {type: string, enum: [REQUESTED, VALIDATED, NOT_CONSUMED, REQUESTED_BUT_NOT_VALIDATED]}
+        status: {type: string, enum: [CREATED, CLAIMED, NOT_CLAIMED, CLAIMED_BUT_NOT_VALIDATED, VALIDATED]}
         validated_at: {type: string, format: date-time}
         validated_by: {type: string, format: uuid}
         notes: {type: string}
@@ -631,11 +632,11 @@ components:
               type: object
               properties:
                 type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
-                name: {type: string, enum: [DESAYUNO, ALMUERZO, CENA]}
+                name: {type: string, enum: [BREAKFAST, ALMUERZO, CENA]}
     MealReportRow:
       type: object
       properties:
-        meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
+        meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
         eligible: {type: integer}
         claimed: {type: integer}
         not_claimed: {type: integer}
@@ -647,16 +648,16 @@ components:
           properties:
             from: {type: string, format: date-time}
             to: {type: string, format: date-time}
-            meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
-            shift_type: {type: string, enum: [DIA, NOCHE]}
+            meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
+            shift_type: {type: string, enum: [DAY, NIGHT]}
         summary:
           type: object
           properties:
             total_eligible: {type: integer}
             consumed: {type: integer, description: Pedidos VALIDATED}
-            requested_not_validated: {type: integer, description: Registros REQUESTED_BUT_NOT_VALIDATED}
-            not_claimed: {type: integer, description: Registros NOT_CONSUMED}
-            did_not_consume: {type: integer, description: REQUESTED_BUT_NOT_VALIDATED más NOT_CONSUMED}
+            requested_not_validated: {type: integer, description: Registros CLAIMED_BUT_NOT_VALIDATED}
+            not_claimed: {type: integer, description: Registros NOT_CLAIMED}
+            did_not_consume: {type: integer, description: CLAIMED_BUT_NOT_VALIDATED más NOT_CLAIMED}
         data:
           type: array
           items: {$ref: '#/components/schemas/DetailedMealReportRow'}
@@ -669,9 +670,9 @@ components:
       properties:
         id: {type: string, format: uuid}
         service_date: {type: string, format: date-time}
-        meal_type: {type: string, enum: [DESAYUNO, TARDE, NOCHE]}
-        shift_type: {type: string, enum: [DIA, NOCHE]}
-        status: {type: string, enum: [REQUESTED, VALIDATED, NOT_CONSUMED, REQUESTED_BUT_NOT_VALIDATED]}
+        meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
+        shift_type: {type: string, enum: [DAY, NIGHT]}
+        status: {type: string, enum: [CREATED, CLAIMED, NOT_CLAIMED, CLAIMED_BUT_NOT_VALIDATED, VALIDATED]}
         claimed_at: {type: string, format: date-time}
         validated_at: {type: string, format: date-time}
         worker_id: {type: string, format: uuid}
