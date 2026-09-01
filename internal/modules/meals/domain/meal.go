@@ -51,13 +51,6 @@ type MealOrder struct {
 	Service ClaimPreviewService `json:"service"`
 }
 
-type ReportRow struct {
-	MealType   MealType `json:"meal_type"`
-	Eligible   int64    `json:"eligible"`
-	Claimed    int64    `json:"claimed"`
-	NotClaimed int64    `json:"not_claimed"`
-}
-
 type ReportFilters struct {
 	From      time.Time `json:"from"`
 	To        time.Time `json:"to"`
@@ -78,24 +71,6 @@ type DetailedReportRow struct {
 	DocumentNumber string      `json:"document_number"`
 	EmployeeCode   string      `json:"employee_code"`
 	Department     *string     `json:"department,omitempty"`
-}
-
-type DetailedReportSummary struct {
-	TotalEligible         int64 `json:"total_eligible"`
-	Consumed              int64 `json:"consumed"`
-	RequestedNotValidated int64 `json:"requested_not_validated"`
-	NotClaimed            int64 `json:"not_claimed"`
-	DidNotConsume         int64 `json:"did_not_consume"`
-}
-
-type DetailedReport struct {
-	Filters    ReportFilters         `json:"filters"`
-	Summary    DetailedReportSummary `json:"summary"`
-	Data       []DetailedReportRow   `json:"data"`
-	Page       int                   `json:"page"`
-	PageSize   int                   `json:"page_size"`
-	Total      int64                 `json:"total"`
-	TotalPages int                   `json:"total_pages"`
 }
 
 type MealStatusSummary struct {

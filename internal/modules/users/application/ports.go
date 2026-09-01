@@ -13,6 +13,5 @@ type UserRepository interface {
 	ListByRoles(ctx context.Context, roles ...domain.Role) ([]domain.MyUser, error)
 	FindPasswordCredential(ctx context.Context, username string) (*domain.User, string, error)
 	FindByDNI(ctx context.Context, dni string) (*domain.User, error)
-	List(ctx context.Context) ([]domain.User, error)
 	RoleExists(ctx context.Context, role domain.Role) (bool, error)
 }

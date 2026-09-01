@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -35,154 +34,48 @@ type registerWorkerRequest struct {
 	Notes                 string `json:"notes"`
 }
 
-func previewQuery(c *gin.Context) (
-	time.Time,
-	[]string,
-	int,
-	int,
-	error,
-) {
-	var date time.Time
-	var err error
-
-	if value := strings.TrimSpace(c.Query("date")); value != "" {
-		date, err = time.Parse("2006-01-02", value)
-		if err != nil {
-			return date, nil, 0, 0, fmt.Errorf("date must use YYYY-MM-DD")
-		}
+func previewRangeQuery(c *gin.Context) (time.Time, time.Time, error) {
+	from, fromErr := time.Parse("2006-01-02", strings.TrimSpace(c.Query("from")))
+	to, toErr := time.Parse("2006-01-02", strings.TrimSpace(c.Query("to")))
+	if fromErr != nil || toErr != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("from and to are required and must use YYYY-MM-DD")
 	}
-
-	page, pageSize := 1, 20
-
-	if value := c.Query("page"); value != "" {
-		page, err = strconv.Atoi(value)
-		if err != nil || page < 1 {
-			return date, nil, 0, 0, fmt.Errorf("page must be positive")
-		}
-	}
-
-	if value := c.Query("page_size"); value != "" {
-		pageSize, err = strconv.Atoi(value)
-		if err != nil || pageSize < 1 {
-			return date, nil, 0, 0, fmt.Errorf("page_size must be positive")
-		}
-	}
-
-	return date, c.QueryArray("meal_type"), page, pageSize, nil
+	return from, to, nil
 }
 
 func (h *Handler) ShiftPreview(c *gin.Context) {
-	fromValue := strings.TrimSpace(c.Query("from"))
-	toValue := strings.TrimSpace(c.Query("to"))
-	if fromValue != "" || toValue != "" {
-		if fromValue == "" || toValue == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "from and to are both required"})
-			return
-		}
-		from, fromErr := time.Parse("2006-01-02", fromValue)
-		to, toErr := time.Parse("2006-01-02", toValue)
-		if fromErr != nil || toErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "from and to must use YYYY-MM-DD"})
-			return
-		}
-		report, err := h.service.ShiftPreviewRange(c, from, to, c.QueryArray("meal_type"))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, report)
-		return
-	}
-
-	date, meals, page, size, err := previewQuery(c)
+	from, to, err := previewRangeQuery(c)
 	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	report, err := h.service.ShiftPreview(
-		c,
-		date,
-		meals,
-		page,
-		size,
-		true,
-	)
+	report, err := h.service.ShiftPreviewRange(c, from, to, c.QueryArray("meal_type"))
 	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(200, report)
+	c.JSON(http.StatusOK, report)
 }
 
 func (h *Handler) ExportShiftPreview(c *gin.Context) {
-	fromValue := strings.TrimSpace(c.Query("from"))
-	toValue := strings.TrimSpace(c.Query("to"))
-	if fromValue != "" || toValue != "" {
-		if fromValue == "" || toValue == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "from and to are both required"})
-			return
-		}
-		from, fromErr := time.Parse("2006-01-02", fromValue)
-		to, toErr := time.Parse("2006-01-02", toValue)
-		if fromErr != nil || toErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "from and to must use YYYY-MM-DD"})
-			return
-		}
-		report, err := h.service.ShiftPreviewRange(c, from, to, c.QueryArray("meal_type"))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		content, err := previewexcel.BuildShiftPreviewRange(report)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate Excel report"})
-			return
-		}
-		name := fmt.Sprintf("comidas-%s-%s.xlsx", from.Format("20060102"), to.Format("20060102"))
-		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
-		c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content)
-		return
-	}
-
-	date, _, _, _, err := previewQuery(c)
+	from, to, err := previewRangeQuery(c)
 	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	report, err := h.service.ShiftPreview(
-		c,
-		date,
-		nil,
-		1,
-		20,
-		false,
-	)
+	report, err := h.service.ShiftPreviewRange(c, from, to, c.QueryArray("meal_type"))
 	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	content, err := previewexcel.BuildShiftPreview(report)
+	content, err := previewexcel.BuildShiftPreviewRange(report)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "could not generate Excel report"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate Excel report"})
 		return
 	}
-
-	name := "Comidas Dia Actual.xlsx"
-
-	c.Header(
-		"Content-Disposition",
-		fmt.Sprintf(`attachment; filename="%s"`, name),
-	)
-
-	c.Data(
-		200,
-		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-		content,
-	)
+	name := fmt.Sprintf("comidas-%s-%s.xlsx", from.Format("20060102"), to.Format("20060102"))
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content)
 }
 
 func (h *Handler) RegisterWorker(c *gin.Context) {
@@ -350,30 +243,6 @@ func writeAssignmentError(c *gin.Context, err error) {
 	}
 	c.JSON(status, gin.H{"error": gin.H{"code": "ASSIGNMENT_REJECTED", "message": err.Error()}})
 }
-func (h *Handler) ListAssignments(c *gin.Context) {
-	from, e1 := time.Parse("2006-01-02", c.Query("from"))
-	to, e2 := time.Parse("2006-01-02", c.Query("to"))
-	if e1 != nil || e2 != nil {
-		c.JSON(400, gin.H{"error": "from and to must use YYYY-MM-DD"})
-		return
-	}
-	items, err := h.service.ListAssignments(c, from, to)
-	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(200, items)
-}
-
-func (h *Handler) ListWorkerAssignments(c *gin.Context) {
-	items, err := h.service.ListWorkerAssignments(c, c.Param("id"), c.Query("period"))
-	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, items)
-}
-
 func (h *Handler) ListWorkerAssignmentsRange(c *gin.Context) {
 	from, e1 := time.Parse("2006-01-02", c.Query("from"))
 	to, e2 := time.Parse("2006-01-02", c.Query("to"))

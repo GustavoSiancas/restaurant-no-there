@@ -20,32 +20,14 @@ paths:
     get:
       tags: [Testing]
       summary: Consultar la fecha y hora efectiva del servidor
-      description: Endpoint público y temporal para pruebas. Devuelve la hora usada por los servicios de Workforce y Meals.
+      description: RRHH, OWNER, COLLABORATOR y WORKER. Devuelve la hora usada por los servicios de Workforce y Meals.
+      security: [{bearerAuth: []}]
       responses:
         '200':
           description: Fecha y hora efectiva en America/Lima
           content:
             application/json:
               example: {datetime: '2026-09-02T06:30:00-05:00', date: '2026-09-02', time: '06:30:00', timezone: America/Lima, adjusted: true}
-    put:
-      tags: [Testing]
-      summary: Modificar o restablecer la fecha y hora efectiva del servidor
-      description: Endpoint público y temporal para pruebas. La hora fijada continúa avanzando normalmente. Enviar reset=true para volver a la hora real.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                datetime: {type: string, format: date-time, example: '2026-09-02T06:30:00-05:00'}
-                reset: {type: boolean, default: false}
-            examples:
-              set: {value: {datetime: '2026-09-02T06:30:00-05:00'}}
-              reset: {value: {reset: true}}
-      responses:
-        '200': {description: Fecha y hora efectiva actualizada}
-        '400': {$ref: '#/components/responses/BadRequest'}
   /auth/bootstrap/admin:
     post:
       tags: [Auth]
@@ -83,7 +65,7 @@ paths:
     post:
       tags: [Users]
       summary: Registrar WORKER
-      description: Requiere Bearer token de ADMIN, OWNER o RRHH. Crea atómicamente el usuario WORKER y su información laboral; los IDs se generan automáticamente.
+      description: Requiere Bearer token de ADMIN o RRHH. Crea atómicamente el usuario WORKER y su información laboral; los IDs se generan automáticamente.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
@@ -100,7 +82,7 @@ paths:
     post:
       tags: [Users]
       summary: Registrar un COLLABORATOR
-      description: Solo OWNER. Crea un ayudante que puede recibir y validar pedidos de comida.
+      description: ADMIN u OWNER. Crea un ayudante que puede recibir y validar pedidos de comida.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
@@ -162,20 +144,10 @@ paths:
     get:
       tags: [Users]
       summary: Listar trabajadores
-      description: Disponible para ADMIN, OWNER y RRHH.
+      description: Disponible solamente para RRHH.
       security: [{bearerAuth: []}]
       responses:
         '200': {description: Trabajadores, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MyUser'}}}}}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '403': {$ref: '#/components/responses/Forbidden'}
-  /users/management:
-    get:
-      tags: [Users]
-      summary: Listar OWNER y RRHH
-      description: Disponible únicamente para ADMIN.
-      security: [{bearerAuth: []}]
-      responses:
-        '200': {description: Usuarios OWNER y RRHH, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MyUser'}}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
   /worker-shift-assignments:
@@ -241,7 +213,7 @@ paths:
     get:
       tags: [Workforce]
       summary: Consultar turnos de un trabajador entre fechas
-      description: Disponible para ADMIN, OWNER y RRHH. Incluye las fechas from y to.
+      description: Disponible solamente para RRHH. Incluye las fechas from y to.
       security: [{bearerAuth: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
@@ -315,7 +287,7 @@ paths:
     get:
       tags: [Meals]
       summary: Listar pedidos de comida
-      description: COLLABORATOR y OWNER. Por defecto devuelve CLAIMED; la lista deja de incluir un pedido al validarse o al cerrar su horario.
+      description: Solo COLLABORATOR. Por defecto devuelve CLAIMED; la lista deja de incluir un pedido al validarse o al cerrar su horario.
       security: [{bearerAuth: []}]
       parameters:
         - {name: status, in: query, required: false, schema: {type: string, enum: [CLAIMED, VALIDATED], default: CLAIMED}}
@@ -327,7 +299,7 @@ paths:
     get:
       tags: [Meals]
       summary: Reporte paginado de estados de comidas por rango
-      description: OWNER y RRHH. Agrupa por tipo de comida los estados reclamados (CLAIMED, CLAIMED_BUT_NOT_VALIDATED y VALIDATED) y no reclamados (CREATED y NOT_CLAIMED), e incluye el detalle por trabajador.
+      description: Solo OWNER. Agrupa por tipo de comida los estados reclamados (CLAIMED, CLAIMED_BUT_NOT_VALIDATED y VALIDATED) y no reclamados (CREATED y NOT_CLAIMED), e incluye el detalle por trabajador.
       security: [{bearerAuth: []}]
       parameters:
         - {name: from, in: query, required: true, schema: {type: string, format: date}}
@@ -350,47 +322,11 @@ paths:
         '200': {description: Archivo Excel con hojas Resumen y Detalle}
         '400': {$ref: '#/components/responses/BadRequest'}
         '403': {$ref: '#/components/responses/Forbidden'}
-  /meal-reports/daily:
-    get:
-      tags: [Meals]
-      summary: Reporte paginado de alimentación
-      description: OWNER y RRHH. Sin filtros devuelve el día anterior en hora Perú. Distingue consumidos, pedidos sin validar y no reclamados.
-      security: [{bearerAuth: []}]
-      parameters:
-        - {name: from, in: query, required: false, schema: {type: string, format: date}}
-        - {name: to, in: query, required: false, schema: {type: string, format: date}}
-        - {name: meal_type, in: query, required: false, schema: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}
-        - {name: shift_type, in: query, required: false, schema: {type: string, enum: [DAY, NIGHT]}}
-        - {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
-        - {name: page_size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
-      responses:
-        '200': {description: Reporte paginado, content: {application/json: {schema: {$ref: '#/components/schemas/DetailedMealReport'}}}}
-        '400': {$ref: '#/components/responses/BadRequest'}
-        '403': {$ref: '#/components/responses/Forbidden'}
-  /meal-reports/export.xlsx:
-    get:
-      tags: [Meals]
-      summary: Exportar reporte de alimentación a Excel
-      description: OWNER y RRHH. Aplica from, to, meal_type y shift_type; sin filtros exporta el día anterior completo.
-      security: [{bearerAuth: []}]
-      parameters:
-        - {name: from, in: query, required: false, schema: {type: string, format: date}}
-        - {name: to, in: query, required: false, schema: {type: string, format: date}}
-        - {name: meal_type, in: query, required: false, schema: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}
-        - {name: shift_type, in: query, required: false, schema: {type: string, enum: [DAY, NIGHT]}}
-      responses:
-        '200':
-          description: Archivo Excel con hojas Resumen y Detalle
-          content:
-            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
-              schema: {type: string, format: binary}
-        '400': {$ref: '#/components/responses/BadRequest'}
-        '403': {$ref: '#/components/responses/Forbidden'}
   /meal-orders/{id}:
     get:
       tags: [Meals]
       summary: Buscar un pedido por UUID
-      description: COLLABORATOR y OWNER. Si ya se entregó devuelve status VALIDATED y la hora de validación.
+      description: Solo COLLABORATOR. Si ya se entregó devuelve status VALIDATED y la hora de validación.
       security: [{bearerAuth: []}]
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
       responses:
@@ -413,63 +349,32 @@ paths:
       summary: Ruta compatible para la lista de comidas que se preparan por fecha
       security: [{bearerAuth: []}]
       parameters:
-        - {name: date, in: query, required: false, schema: {type: string, format: date}}
-        - {name: from, in: query, required: false, description: Inicio inclusivo del rango; debe enviarse junto con to., schema: {type: string, format: date}}
-        - {name: to, in: query, required: false, description: Fin inclusivo del rango; debe enviarse junto con from., schema: {type: string, format: date}}
-        - {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
-
-        - {name: page_size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: from, in: query, required: true, description: Inicio inclusivo desde mañana., schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, description: Fin inclusivo del rango., schema: {type: string, format: date}}
 
       responses:
         '200':
-          description: Lista paginada de comidas cuya fecha efectiva de servicio coincide con date
-  /meal-preparation-preview:
-    get:
-      tags: [Meals]
-      summary: Listar las comidas que deben prepararse en una fecha
-      description: Incluye BREAKFAST y LUNCH del turno DAY de la fecha, DINNER del turno nocturno de la fecha y BREAKFAST de los turnos DINNER del día anterior.
-      security: [{bearerAuth: []}]
-      parameters:
-        - {name: date, in: query, required: false, schema: {type: string, format: date}}
-        - {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
-        - {name: page_size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
-      responses:
-        '200': {description: Lista paginada de comidas a preparar}
+          description: Comidas programadas agrupadas por fecha
   /workforce/shift-preview/export.xlsx:
     get:
       tags: [Workforce]
       summary: Exportar Comidas Dia Actual a Excel
-      description: Genera un archivo sin paginación con tres hojas (Desayunos, Almuerzos y Cenas); cada hoja muestra fecha, cantidad y todos los trabajadores asignados.
+      description: Genera una hoja por cada día del rango con el resumen y los trabajadores asignados.
       security: [{bearerAuth: []}]
       parameters:
-        - {name: date, in: query, required: false, schema: {type: string, format: date}}
-        - {name: from, in: query, required: false, description: Inicio inclusivo; debe enviarse junto con to., schema: {type: string, format: date}}
-        - {name: to, in: query, required: false, description: Fin inclusivo; debe enviarse junto con from., schema: {type: string, format: date}}
+        - {name: from, in: query, required: true, description: Inicio inclusivo desde mañana., schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, description: Fin inclusivo del rango., schema: {type: string, format: date}}
 
         - {name: meal_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}}
 
       responses:
         '200':
           description: Archivo XLSX
-  /meal-preparation-preview/export.xlsx:
-    get:
-      tags: [Meals]
-      summary: Exportar Comidas Dia Actual a Excel
-      description: Genera un archivo sin paginación con tres hojas (Desayunos, Almuerzos y Cenas); cada hoja muestra fecha, cantidad y todos los trabajadores asignados.
-      security: [{bearerAuth: []}]
-      parameters:
-        - {name: date, in: query, required: false, schema: {type: string, format: date}}
-        - {name: meal_type, in: query, required: false, schema: {type: array, items: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}}
-      responses:
-        '200':
-          description: Archivo XLSX Comidas Dia Actual
-          content:
-            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: {}
   /ws/meal-orders:
     get:
       tags: [Meals]
       summary: WebSocket de pedidos en vivo
-      description: COLLABORATOR y OWNER. En navegador conectar con los subprotocolos ["bearer", "JWT"]. El token no se acepta en la URL. Emite MEAL_ORDER_CREATED y MEAL_ORDER_VALIDATED.
+      description: Solo COLLABORATOR. En navegador conectar con los subprotocolos ["bearer", "JWT"]. El token no se acepta en la URL. Emite MEAL_ORDER_CREATED y MEAL_ORDER_VALIDATED.
       parameters:
         - {name: access_token, in: query, required: false, schema: {type: string}}
       responses:
@@ -701,53 +606,6 @@ components:
               properties:
                 type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
                 name: {type: string, enum: [BREAKFAST, ALMUERZO, CENA]}
-    MealReportRow:
-      type: object
-      properties:
-        meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
-        eligible: {type: integer}
-        claimed: {type: integer}
-        not_claimed: {type: integer}
-    DetailedMealReport:
-      type: object
-      properties:
-        filters:
-          type: object
-          properties:
-            from: {type: string, format: date-time}
-            to: {type: string, format: date-time}
-            meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
-            shift_type: {type: string, enum: [DAY, NIGHT]}
-        summary:
-          type: object
-          properties:
-            total_eligible: {type: integer}
-            consumed: {type: integer, description: Pedidos VALIDATED}
-            requested_not_validated: {type: integer, description: Registros CLAIMED_BUT_NOT_VALIDATED}
-            not_claimed: {type: integer, description: Registros NOT_CLAIMED}
-            did_not_consume: {type: integer, description: CLAIMED_BUT_NOT_VALIDATED más NOT_CLAIMED}
-        data:
-          type: array
-          items: {$ref: '#/components/schemas/DetailedMealReportRow'}
-        page: {type: integer}
-        page_size: {type: integer}
-        total: {type: integer}
-        total_pages: {type: integer}
-    DetailedMealReportRow:
-      type: object
-      properties:
-        id: {type: string, format: uuid}
-        service_date: {type: string, format: date-time}
-        meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
-        shift_type: {type: string, enum: [DAY, NIGHT]}
-        status: {type: string, enum: [CREATED, CLAIMED, NOT_CLAIMED, CLAIMED_BUT_NOT_VALIDATED, VALIDATED]}
-        claimed_at: {type: string, format: date-time}
-        validated_at: {type: string, format: date-time}
-        worker_id: {type: string, format: uuid}
-        full_name: {type: string}
-        document_number: {type: string, example: '****5678'}
-        employee_code: {type: string}
-        department: {type: string}
     PasswordLogin:
       type: object
       required: [username, password]

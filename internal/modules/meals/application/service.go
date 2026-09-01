@@ -78,13 +78,6 @@ func optional(value string) *string {
 	}
 	return &value
 }
-func (s *Service) Report(ctx context.Context, from, to time.Time) ([]domain.ReportRow, error) {
-	if from.IsZero() || to.IsZero() || to.Before(from) {
-		return nil, fmt.Errorf("valid from and to dates are required")
-	}
-	return s.repo.Report(ctx, from, to)
-}
-
 func (s *Service) ListSchedules(ctx context.Context) ([]domain.ServiceRule, error) {
 	return s.repo.ListRules(ctx)
 }
@@ -139,55 +132,6 @@ func (s *Service) CloseExpiredMealWindows(ctx context.Context, lookbackDays int)
 	return created, nil
 }
 
-func (s *Service) DetailedReport(ctx context.Context, filters domain.ReportFilters, page, pageSize int, paginate bool) (*domain.DetailedReport, error) {
-	now := s.now().In(s.peruLocation())
-	yesterday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.peruLocation()).AddDate(0, 0, -1)
-	if filters.From.IsZero() && filters.To.IsZero() {
-		filters.From, filters.To = yesterday, yesterday
-	} else if filters.From.IsZero() {
-		filters.From = filters.To
-	} else if filters.To.IsZero() {
-		filters.To = filters.From
-	}
-	filters.From = time.Date(filters.From.Year(), filters.From.Month(), filters.From.Day(), 0, 0, 0, 0, s.peruLocation())
-	filters.To = time.Date(filters.To.Year(), filters.To.Month(), filters.To.Day(), 0, 0, 0, 0, s.peruLocation())
-	if filters.To.Before(filters.From) {
-		return nil, fmt.Errorf("to must be on or after from")
-	}
-	if filters.MealType != "" && !filters.MealType.Valid() {
-		return nil, fmt.Errorf("meal_type must be BREAKFAST, LUNCH or DINNER")
-	}
-	if filters.ShiftType != "" && filters.ShiftType != "DAY" && filters.ShiftType != "NIGHT" {
-		return nil, fmt.Errorf("shift_type must be DAY or NIGHT")
-	}
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 {
-		pageSize = 20
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
-	summary, err := s.repo.DetailedReportSummary(ctx, filters)
-	if err != nil {
-		return nil, err
-	}
-	limit, offset := 0, 0
-	if paginate {
-		limit, offset = pageSize, (page-1)*pageSize
-	}
-	rows, err := s.repo.DetailedReportRows(ctx, filters, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	totalPages := 0
-	if summary.TotalEligible > 0 {
-		totalPages = int((summary.TotalEligible + int64(pageSize) - 1) / int64(pageSize))
-	}
-	return &domain.DetailedReport{Filters: filters, Summary: summary, Data: rows, Page: page, PageSize: pageSize, Total: summary.TotalEligible, TotalPages: totalPages}, nil
-}
-
 func (s *Service) MealStatusReport(ctx context.Context, from, to time.Time, page, pageSize int, paginate bool) (*domain.MealStatusReport, error) {
 	if from.IsZero() || to.IsZero() {
 		return nil, fmt.Errorf("from and to are required")
@@ -197,6 +141,11 @@ func (s *Service) MealStatusReport(ctx context.Context, from, to time.Time, page
 	to = time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, location)
 	if to.Before(from) {
 		return nil, fmt.Errorf("to must be on or after from")
+	}
+	now := s.now().In(location)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+	if to.After(today) {
+		return nil, fmt.Errorf("to cannot be after today")
 	}
 	if page < 1 {
 		page = 1

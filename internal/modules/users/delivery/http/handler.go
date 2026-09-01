@@ -66,23 +66,6 @@ func (h *Handler) RegisterCollaborator(c *gin.Context) {
 	c.JSON(http.StatusCreated, u)
 }
 
-func (h *Handler) List(c *gin.Context) {
-	users, err := h.service.List(c)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "could not list users"})
-		return
-	}
-	c.JSON(200, users)
-}
-func (h *Handler) Get(c *gin.Context) {
-	u, err := h.service.FindByID(c, c.Param("id"))
-	if err != nil {
-		c.JSON(404, gin.H{"error": "user not found"})
-		return
-	}
-	c.JSON(200, u)
-}
-
 func (h *Handler) My(c *gin.Context) {
 	userID, ok := c.Get("user_id")
 	if !ok {
@@ -101,15 +84,6 @@ func (h *Handler) Workers(c *gin.Context) {
 	users, err := h.service.ListByRoles(c, domain.RoleWorker)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list workers"})
-		return
-	}
-	c.JSON(http.StatusOK, users)
-}
-
-func (h *Handler) Management(c *gin.Context) {
-	users, err := h.service.ListByRoles(c, domain.RoleOwner, domain.RoleRRHH)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list management users"})
 		return
 	}
 	c.JSON(http.StatusOK, users)

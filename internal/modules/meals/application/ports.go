@@ -21,8 +21,6 @@ type Repository interface {
 	ValidateOrder(ctx context.Context, id, validatedBy string, validatedAt time.Time) (*domain.MealOrder, error)
 	EarliestPendingServiceDate(ctx context.Context) (*time.Time, error)
 	CloseMealWindow(ctx context.Context, mealType domain.MealType, serviceDate, closedAt time.Time) (domain.MealWindowClosure, error)
-	DetailedReportSummary(ctx context.Context, filters domain.ReportFilters) (domain.DetailedReportSummary, error)
 	DetailedReportRows(ctx context.Context, filters domain.ReportFilters, limit, offset int) ([]domain.DetailedReportRow, error)
 	MealStatusSummary(ctx context.Context, from, to time.Time) ([]domain.MealStatusSummary, error)
-	Report(ctx context.Context, from, to time.Time) ([]domain.ReportRow, error)
 }

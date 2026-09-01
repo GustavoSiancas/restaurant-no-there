@@ -129,75 +129,6 @@ func (h *Handler) ValidateOrder(c *gin.Context) {
 
 func (h *Handler) OrdersWebSocket(c *gin.Context) { h.broker.Serve(c) }
 
-func detailedReportQuery(c *gin.Context) (domain.ReportFilters, int, int, error) {
-	var filters domain.ReportFilters
-	var err error
-	if value := strings.TrimSpace(c.Query("from")); value != "" {
-		filters.From, err = time.Parse("2006-01-02", value)
-		if err != nil {
-			return filters, 0, 0, fmt.Errorf("from must use YYYY-MM-DD")
-		}
-	}
-	if value := strings.TrimSpace(c.Query("to")); value != "" {
-		filters.To, err = time.Parse("2006-01-02", value)
-		if err != nil {
-			return filters, 0, 0, fmt.Errorf("to must use YYYY-MM-DD")
-		}
-	}
-	filters.MealType = domain.MealType(strings.ToUpper(strings.TrimSpace(c.Query("meal_type"))))
-	filters.ShiftType = strings.ToUpper(strings.TrimSpace(c.Query("shift_type")))
-	page, pageSize := 1, 20
-	if value := c.Query("page"); value != "" {
-		page, err = strconv.Atoi(value)
-		if err != nil || page < 1 {
-			return filters, 0, 0, fmt.Errorf("page must be a positive integer")
-		}
-	}
-	if value := c.Query("page_size"); value != "" {
-		pageSize, err = strconv.Atoi(value)
-		if err != nil || pageSize < 1 {
-			return filters, 0, 0, fmt.Errorf("page_size must be a positive integer")
-		}
-	}
-	return filters, page, pageSize, nil
-}
-
-func (h *Handler) DetailedReport(c *gin.Context) {
-	filters, page, pageSize, err := detailedReportQuery(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	report, err := h.service.DetailedReport(c, filters, page, pageSize, true)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, report)
-}
-
-func (h *Handler) ExportDetailedReport(c *gin.Context) {
-	filters, _, _, err := detailedReportQuery(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	report, err := h.service.DetailedReport(c, filters, 1, 20, false)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	content, err := reportexcel.BuildDetailedReport(report)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate Excel report"})
-		return
-	}
-	filename := fmt.Sprintf("reporte-comidas-%s-%s.xlsx", report.Filters.From.Format("20060102"), report.Filters.To.Format("20060102"))
-	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content)
-}
-
 func mealStatusReportQuery(c *gin.Context) (time.Time, time.Time, int, int, error) {
 	from, fromErr := time.Parse("2006-01-02", strings.TrimSpace(c.Query("from")))
 	to, toErr := time.Parse("2006-01-02", strings.TrimSpace(c.Query("to")))
@@ -255,21 +186,6 @@ func (h *Handler) ExportMealStatusReport(c *gin.Context) {
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content)
 }
-func (h *Handler) Report(c *gin.Context) {
-	from, e1 := time.Parse("2006-01-02", c.Query("from"))
-	to, e2 := time.Parse("2006-01-02", c.Query("to"))
-	if e1 != nil || e2 != nil {
-		c.JSON(400, gin.H{"error": "from and to must use YYYY-MM-DD"})
-		return
-	}
-	report, err := h.service.Report(c, from, to)
-	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(200, report)
-}
-
 func (h *Handler) ListSchedules(c *gin.Context) {
 	schedules, err := h.service.ListSchedules(c)
 	if err != nil {

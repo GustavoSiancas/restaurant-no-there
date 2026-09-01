@@ -2,10 +2,44 @@ package excel
 
 import (
 	"fmt"
+	"time"
 
 	"backend/internal/modules/meals/domain"
 	"github.com/xuri/excelize/v2"
 )
+
+func optionalText(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func optionalTime(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	hour := value.Hour()
+	suffix := "a.m."
+	if hour >= 12 {
+		suffix = "p.m."
+	}
+	displayHour := hour % 12
+	if displayHour == 0 {
+		displayHour = 12
+	}
+	return fmt.Sprintf("%s %02d:%02d:%02d %s", value.Format("02/01/2006"), displayHour, value.Minute(), value.Second(), suffix)
+}
+
+func displayMeal(value domain.MealType) string {
+	if value == domain.Lunch {
+		return "ALMUERZO"
+	}
+	if value == domain.Dinner {
+		return "CENA"
+	}
+	return "BREAKFAST"
+}
 
 func BuildMealStatusReport(report *domain.MealStatusReport) ([]byte, error) {
 	file := excelize.NewFile()

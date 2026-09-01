@@ -113,45 +113,6 @@ func scanAssignment(row pgx.Row) (*domain.WorkerShiftAssignment, error) {
 func (r *Repository) FindAssignmentByWorkerAndDate(ctx context.Context, workerID string, date time.Time) (*domain.WorkerShiftAssignment, error) {
 	return scanAssignment(r.db.QueryRow(ctx, `SELECT id,worker_id,shift_type,status,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE worker_id=$1 AND work_date=$2`, workerID, date))
 }
-func (r *Repository) ListAssignments(ctx context.Context, from, to time.Time) ([]domain.WorkerShiftAssignment, error) {
-	rows, err := r.db.Query(ctx, `SELECT id,worker_id,shift_type,status,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE work_date BETWEEN $1 AND $2 ORDER BY work_date,worker_id`, from, to)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := make([]domain.WorkerShiftAssignment, 0)
-	for rows.Next() {
-		a, e := scanAssignment(rows)
-		if e != nil {
-			return nil, e
-		}
-		result = append(result, *a)
-	}
-	return result, rows.Err()
-}
-func (r *Repository) ListWorkerAssignments(ctx context.Context, workerID, period string, today time.Time) ([]domain.WorkerShiftAssignment, error) {
-	operator := "<="
-	order := "DESC"
-	if period == "upcoming" {
-		operator = ">="
-		order = "ASC"
-	}
-	query := `SELECT id,worker_id,shift_type,status,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE worker_id=$1 AND work_date ` + operator + ` $2 ORDER BY work_date ` + order
-	rows, err := r.db.Query(ctx, query, workerID, today)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := make([]domain.WorkerShiftAssignment, 0)
-	for rows.Next() {
-		item, e := scanAssignment(rows)
-		if e != nil {
-			return nil, e
-		}
-		items = append(items, *item)
-	}
-	return items, rows.Err()
-}
 func (r *Repository) ListWorkerAssignmentsRange(ctx context.Context, workerID string, from, to time.Time) ([]domain.WorkerShiftAssignment, error) {
 	rows, err := r.db.Query(ctx, `SELECT id,worker_id,shift_type,status,work_date,assigned_by,notes,created_at,updated_at FROM worker_shift_assignments WHERE worker_id=$1 AND work_date BETWEEN $2 AND $3 ORDER BY work_date ASC`, workerID, from, to)
 	if err != nil {

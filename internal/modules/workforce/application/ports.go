@@ -17,8 +17,6 @@ type Repository interface {
 	FindAssignmentByWorkerAndDate(ctx context.Context, workerID string, date time.Time) (*domain.WorkerShiftAssignment, error)
 	UpdateAssignment(ctx context.Context, assignment *domain.WorkerShiftAssignment) error
 	DeleteAssignment(ctx context.Context, id string, today time.Time) error
-	ListAssignments(ctx context.Context, from, to time.Time) ([]domain.WorkerShiftAssignment, error)
-	ListWorkerAssignments(ctx context.Context, workerID, period string, today time.Time) ([]domain.WorkerShiftAssignment, error)
 	ListWorkerAssignmentsRange(ctx context.Context, workerID string, from, to time.Time) ([]domain.WorkerShiftAssignment, error)
 	ListShiftPreview(ctx context.Context, date time.Time) ([]domain.ShiftPreviewRow, error)
 	ListActiveMealRules(ctx context.Context) ([]domain.PreviewRule, error)

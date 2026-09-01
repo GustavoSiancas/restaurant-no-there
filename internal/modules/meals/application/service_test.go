@@ -69,17 +69,11 @@ func (f *fakeMealsRepository) CloseMealWindow(_ context.Context, mealType domain
 	f.closed = append(f.closed, mealType)
 	return domain.MealWindowClosure{NotConsumed: 1}, nil
 }
-func (f *fakeMealsRepository) DetailedReportSummary(context.Context, domain.ReportFilters) (domain.DetailedReportSummary, error) {
-	return domain.DetailedReportSummary{}, nil
-}
 func (f *fakeMealsRepository) DetailedReportRows(context.Context, domain.ReportFilters, int, int) ([]domain.DetailedReportRow, error) {
 	return f.reportRows, nil
 }
 func (f *fakeMealsRepository) MealStatusSummary(context.Context, time.Time, time.Time) ([]domain.MealStatusSummary, error) {
 	return f.statusSummary, nil
-}
-func (f *fakeMealsRepository) Report(context.Context, time.Time, time.Time) ([]domain.ReportRow, error) {
-	return nil, nil
 }
 
 func TestMealStatusReportReturnsSummaryAndPaginatedDetail(t *testing.T) {

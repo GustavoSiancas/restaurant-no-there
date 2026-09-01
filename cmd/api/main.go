@@ -89,35 +89,7 @@ func main() {
 	v1.POST("/auth/login/password", authLimit, authHandler.LoginPassword)
 	v1.POST("/auth/login/dni", authLimit, authHandler.LoginDNI)
 	v1.POST("/auth/refresh", authLimit, authHandler.Refresh)
-	v1.GET("/test/server-time", func(c *gin.Context) {
-		now := serverClock.Now().In(peruLocation())
-		c.JSON(http.StatusOK, gin.H{
-			"datetime": now.Format(time.RFC3339),
-			"date":     now.Format("2006-01-02"),
-			"time":     now.Format("15:04:05"),
-			"timezone": "America/Lima",
-			"adjusted": serverClock.Adjusted(),
-		})
-	})
-	v1.PUT("/test/server-time", func(c *gin.Context) {
-		var request struct {
-			Datetime string `json:"datetime"`
-			Reset    bool   `json:"reset"`
-		}
-		if c.ShouldBindJSON(&request) != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
-			return
-		}
-		if request.Reset {
-			serverClock.Reset()
-		} else {
-			value, parseErr := time.Parse(time.RFC3339, request.Datetime)
-			if parseErr != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "datetime must use RFC3339, for example 2026-09-02T06:30:00-05:00"})
-				return
-			}
-			serverClock.Set(value)
-		}
+	v1.GET("/test/server-time", authhttp.RequireAuth(jwtService), authhttp.RequireRoles("RRHH", "OWNER", "COLLABORATOR", "WORKER"), func(c *gin.Context) {
 		now := serverClock.Now().In(peruLocation())
 		c.JSON(http.StatusOK, gin.H{
 			"datetime": now.Format(time.RFC3339),
@@ -130,34 +102,29 @@ func main() {
 	protected := v1.Group("")
 	protected.Use(authhttp.RequireAuth(jwtService))
 	protected.POST("/users/register/management", authhttp.RequireRoles("ADMIN"), usersHandler.RegisterManagement)
-	protected.POST("/users/register/collaborator", authhttp.RequireRoles("OWNER"), usersHandler.RegisterCollaborator)
-	protected.POST("/users/register/worker", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.RegisterWorker)
+	protected.POST("/users/register/collaborator", authhttp.RequireRoles("ADMIN", "OWNER"), usersHandler.RegisterCollaborator)
+	protected.POST("/users/register/worker", authhttp.RequireRoles("ADMIN", "RRHH"), workforceHandler.RegisterWorker)
 	protected.POST("/worker-shift-assignments", authhttp.RequireRoles("RRHH"), workforceHandler.AssignWorker)
 	protected.POST("/worker-shift-assignments/add-massive", authhttp.RequireRoles("RRHH"), workforceHandler.AddMassiveShiftWorkers)
 	protected.PUT("/worker-shift-assignments/:id", authhttp.RequireRoles("RRHH"), workforceHandler.UpdateAssignment)
 	protected.DELETE("/worker-shift-assignments/:id", authhttp.RequireRoles("RRHH"), workforceHandler.DeleteAssignment)
-	protected.GET("/workers/:id/shifts/range", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), workforceHandler.ListWorkerAssignmentsRange)
+	protected.GET("/workers/:id/shifts/range", authhttp.RequireRoles("RRHH"), workforceHandler.ListWorkerAssignmentsRange)
 	protected.GET("/workers/my/shifts/range", authhttp.RequireRoles("WORKER"), workforceHandler.ListMyAssignmentsRange)
 	protected.GET("/meal-claims/my/preview", authhttp.RequireRoles("WORKER"), mealHandler.ClaimPreview)
 	protected.POST("/meal-claims/my/confirm-print", authhttp.RequireRoles("WORKER"), mealHandler.ConfirmPrint)
-	protected.GET("/meal-orders", authhttp.RequireRoles("COLLABORATOR", "OWNER"), mealHandler.ListOrders)
-	protected.GET("/meal-orders/:id", authhttp.RequireRoles("COLLABORATOR", "OWNER"), mealHandler.GetOrder)
+	protected.GET("/meal-orders", authhttp.RequireRoles("COLLABORATOR"), mealHandler.ListOrders)
+	protected.GET("/meal-orders/:id", authhttp.RequireRoles("COLLABORATOR"), mealHandler.GetOrder)
 	protected.PATCH("/meal-orders/:id/validate", authhttp.RequireRoles("COLLABORATOR"), mealHandler.ValidateOrder)
-	protected.GET("/meal-reports/daily", authhttp.RequireRoles("OWNER", "RRHH"), mealHandler.DetailedReport)
-	protected.GET("/meal-reports/export.xlsx", authhttp.RequireRoles("OWNER", "RRHH"), mealHandler.ExportDetailedReport)
-	protected.GET("/meal-status-reports", authhttp.RequireRoles("OWNER", "RRHH"), mealHandler.MealStatusReport)
-	protected.GET("/meal-status-reports/export.xlsx", authhttp.RequireRoles("OWNER", "RRHH"), mealHandler.ExportMealStatusReport)
-	protected.GET("/workforce/shift-preview", authhttp.RequireRoles("OWNER", "RRHH"), workforceHandler.ShiftPreview)
-	protected.GET("/workforce/shift-preview/export.xlsx", authhttp.RequireRoles("OWNER", "RRHH"), workforceHandler.ExportShiftPreview)
-	protected.GET("/meal-preparation-preview", authhttp.RequireRoles("OWNER", "RRHH"), workforceHandler.ShiftPreview)
-	protected.GET("/meal-preparation-preview/export.xlsx", authhttp.RequireRoles("OWNER", "RRHH"), workforceHandler.ExportShiftPreview)
-	protected.GET("/meal-schedules", mealHandler.ListSchedules)
+	protected.GET("/meal-status-reports", authhttp.RequireRoles("OWNER"), mealHandler.MealStatusReport)
+	protected.GET("/meal-status-reports/export.xlsx", authhttp.RequireRoles("OWNER"), mealHandler.ExportMealStatusReport)
+	protected.GET("/workforce/shift-preview", authhttp.RequireRoles("OWNER"), workforceHandler.ShiftPreview)
+	protected.GET("/workforce/shift-preview/export.xlsx", authhttp.RequireRoles("OWNER"), workforceHandler.ExportShiftPreview)
+	protected.GET("/meal-schedules", authhttp.RequireRoles("WORKER"), mealHandler.ListSchedules)
 	protected.GET("/workers/my/status", authhttp.RequireRoles("WORKER"), mealHandler.WorkerStatus)
 	protected.GET("/users/my", usersHandler.My)
-	protected.GET("/users/workers", authhttp.RequireRoles("ADMIN", "OWNER", "RRHH"), usersHandler.Workers)
-	protected.GET("/users/management", authhttp.RequireRoles("ADMIN"), usersHandler.Management)
+	protected.GET("/users/workers", authhttp.RequireRoles("RRHH"), usersHandler.Workers)
 	protected.GET("/users/collaborators", authhttp.RequireRoles("OWNER"), usersHandler.Collaborators)
-	v1.GET("/ws/meal-orders", authhttp.RequireWebSocketAuth(jwtService), authhttp.RequireRoles("COLLABORATOR", "OWNER"), mealHandler.OrdersWebSocket)
+	v1.GET("/ws/meal-orders", authhttp.RequireWebSocketAuth(jwtService), authhttp.RequireRoles("COLLABORATOR"), mealHandler.OrdersWebSocket)
 	server := &http.Server{Addr: ":" + cfg.Port, Handler: r, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
 		log.Printf("API http://localhost:%s | Swagger http://localhost:%s/swagger/index.html", cfg.Port, cfg.Port)

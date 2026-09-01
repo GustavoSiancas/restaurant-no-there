@@ -76,12 +76,6 @@ func (f *fakeRepository) FindAssignmentByWorkerAndDate(context.Context, string, 
 	}
 	return nil, core.ErrNotFound
 }
-func (f *fakeRepository) ListAssignments(context.Context, time.Time, time.Time) ([]domain.WorkerShiftAssignment, error) {
-	return nil, nil
-}
-func (f *fakeRepository) ListWorkerAssignments(context.Context, string, string, time.Time) ([]domain.WorkerShiftAssignment, error) {
-	return nil, nil
-}
 func (f *fakeRepository) ListWorkerAssignmentsRange(context.Context, string, time.Time, time.Time) ([]domain.WorkerShiftAssignment, error) {
 	return nil, nil
 }

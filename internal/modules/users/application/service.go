@@ -56,11 +56,6 @@ func (s *Service) BootstrapAdmin(ctx context.Context, in RegisterInput) (*domain
 	in.Role = domain.RoleAdmin
 	return s.Register(ctx, in)
 }
-func (s *Service) List(ctx context.Context) ([]domain.User, error) { return s.repo.List(ctx) }
-func (s *Service) FindByID(ctx context.Context, id string) (*domain.User, error) {
-	return s.repo.FindByID(ctx, id)
-}
-
 func (s *Service) FindMyUser(ctx context.Context, id string) (*domain.MyUser, error) {
 	return s.repo.FindMyUser(ctx, id)
 }

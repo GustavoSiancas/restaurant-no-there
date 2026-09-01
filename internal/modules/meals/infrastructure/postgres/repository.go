@@ -237,18 +237,6 @@ const detailedReportWhere = ` FROM meal_claims c
 	AND (NULLIF($3,'') IS NULL OR c.meal_type=NULLIF($3,'')::meal_type)
 	AND (NULLIF($4,'') IS NULL OR a.shift_type=NULLIF($4,'')::shift_type)`
 
-func (r *Repository) DetailedReportSummary(ctx context.Context, filters domain.ReportFilters) (domain.DetailedReportSummary, error) {
-	var summary domain.DetailedReportSummary
-	err := r.db.QueryRow(ctx, `SELECT COUNT(*),
-		COUNT(*) FILTER(WHERE c.status='VALIDATED'),
-		COUNT(*) FILTER(WHERE c.status='CLAIMED_BUT_NOT_VALIDATED'),
-		COUNT(*) FILTER(WHERE c.status='NOT_CLAIMED'),
-		COUNT(*) FILTER(WHERE c.status IN ('CLAIMED_BUT_NOT_VALIDATED','NOT_CLAIMED'))`+detailedReportWhere,
-		filters.From, filters.To, filters.MealType, filters.ShiftType).
-		Scan(&summary.TotalEligible, &summary.Consumed, &summary.RequestedNotValidated, &summary.NotClaimed, &summary.DidNotConsume)
-	return summary, err
-}
-
 func (r *Repository) DetailedReportRows(ctx context.Context, filters domain.ReportFilters, limit, offset int) ([]domain.DetailedReportRow, error) {
 	query := `SELECT c.id,c.service_date,c.meal_type,a.shift_type,c.status,c.claimed_at,c.validated_at,c.worker_id,
 		BTRIM(p.first_name || ' ' || p.last_name),
@@ -308,36 +296,6 @@ func (r *Repository) MealStatusSummary(ctx context.Context, from, to time.Time) 
 			domain.ClaimClaimedNotValidated: claimedButNotValidated,
 			domain.ClaimValidated:           validated,
 			domain.ClaimNotClaimed:          notClaimed,
-		}
-		result = append(result, item)
-	}
-	return result, rows.Err()
-}
-func (r *Repository) Report(ctx context.Context, from, to time.Time) ([]domain.ReportRow, error) {
-	rows, err := r.db.Query(ctx, `WITH eligible AS (
-		SELECT worker_id, work_date AS service_date, 'BREAKFAST'::meal_type AS meal_type FROM worker_shift_assignments WHERE shift_type='DAY' AND status='CLOSED'
-		UNION
-		SELECT worker_id, work_date, 'LUNCH'::meal_type FROM worker_shift_assignments WHERE shift_type='DAY' AND status='CLOSED'
-		UNION
-		SELECT worker_id, work_date, 'DINNER'::meal_type FROM worker_shift_assignments WHERE shift_type='NIGHT' AND status='CLOSED'
-		UNION
-		SELECT worker_id, work_date + 1, 'BREAKFAST'::meal_type FROM worker_shift_assignments WHERE shift_type='NIGHT' AND status='CLOSED'
-	), types(meal_type) AS (VALUES ('BREAKFAST'::meal_type),('LUNCH'::meal_type),('DINNER'::meal_type))
-	SELECT t.meal_type, COUNT(e.worker_id),
-		COUNT(c.id) FILTER(WHERE c.status IN ('CLAIMED','VALIDATED','CLAIMED_BUT_NOT_VALIDATED')),
-		COUNT(e.worker_id)-COUNT(c.id) FILTER(WHERE c.status IN ('CLAIMED','VALIDATED','CLAIMED_BUT_NOT_VALIDATED'))
-	FROM types t LEFT JOIN eligible e ON e.meal_type=t.meal_type AND e.service_date BETWEEN $1 AND $2
-	LEFT JOIN meal_claims c ON c.worker_id=e.worker_id AND c.meal_type=e.meal_type AND c.service_date=e.service_date
-	GROUP BY t.meal_type ORDER BY t.meal_type`, from, to)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := make([]domain.ReportRow, 0)
-	for rows.Next() {
-		var item domain.ReportRow
-		if err = rows.Scan(&item.MealType, &item.Eligible, &item.Claimed, &item.NotClaimed); err != nil {
-			return nil, err
 		}
 		result = append(result, item)
 	}

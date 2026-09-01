@@ -206,24 +206,6 @@ func (s *Service) peruLocation() *time.Location {
 	return location
 }
 
-func (s *Service) ListAssignments(ctx context.Context, from, to time.Time) ([]domain.WorkerShiftAssignment, error) {
-	if from.IsZero() || to.IsZero() || to.Before(from) {
-		return nil, fmt.Errorf("valid from and to dates are required")
-	}
-	return s.repo.ListAssignments(ctx, from, to)
-}
-
-func (s *Service) ListWorkerAssignments(ctx context.Context, workerID, period string) ([]domain.WorkerShiftAssignment, error) {
-	worker, err := s.users.FindByID(ctx, workerID)
-	if err != nil || worker.Role != userdomain.RoleWorker {
-		return nil, fmt.Errorf("WORKER not found")
-	}
-	if period != "past" && period != "upcoming" {
-		return nil, fmt.Errorf("period must be past or upcoming")
-	}
-	return s.repo.ListWorkerAssignments(ctx, workerID, period, s.peruToday())
-}
-
 func (s *Service) ListWorkerAssignmentsRange(ctx context.Context, workerID string, from, to time.Time) ([]domain.WorkerShiftAssignment, error) {
 	worker, err := s.users.FindByID(ctx, workerID)
 	if err != nil || worker.Role != userdomain.RoleWorker {
@@ -600,6 +582,9 @@ func (s *Service) ShiftPreviewRange(ctx context.Context, from, to time.Time, mea
 	from, to = s.peruDate(from), s.peruDate(to)
 	if to.Before(from) {
 		return nil, fmt.Errorf("to must be on or after from")
+	}
+	if !from.After(s.peruToday()) {
+		return nil, fmt.Errorf("from must be tomorrow or a later date")
 	}
 
 	result := &domain.ShiftPreviewRange{

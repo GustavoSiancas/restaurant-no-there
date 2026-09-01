@@ -126,22 +126,6 @@ func (r *Repository) FindPasswordCredential(ctx context.Context, value string) (
 func (r *Repository) FindByDNI(ctx context.Context, value string) (*domain.User, error) {
 	return scanUser(r.db.QueryRow(ctx, `SELECT `+userColumns+` FROM users u JOIN user_credentials c ON c.user_id=u.id AND c.type='DNI' AND c.active=TRUE WHERE c.identifier=$1`, value))
 }
-func (r *Repository) List(ctx context.Context) ([]domain.User, error) {
-	rows, err := r.db.Query(ctx, `SELECT `+userColumns+` FROM users u ORDER BY u.created_at DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := make([]domain.User, 0)
-	for rows.Next() {
-		u, e := scanUser(rows)
-		if e != nil {
-			return nil, e
-		}
-		items = append(items, *u)
-	}
-	return items, rows.Err()
-}
 func (r *Repository) RoleExists(ctx context.Context, role domain.Role) (bool, error) {
 	var exists bool
 	err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE role=$1)`, role).Scan(&exists)
