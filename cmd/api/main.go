@@ -114,7 +114,13 @@ func main() {
 	protected.POST("/meal-claims/my/confirm-print", authhttp.RequireRoles("WORKER"), mealHandler.ConfirmPrint)
 	protected.GET("/meal-orders", authhttp.RequireRoles("COLLABORATOR"), mealHandler.ListOrders)
 	protected.GET("/meal-orders/:id", authhttp.RequireRoles("COLLABORATOR"), mealHandler.GetOrder)
+	protected.PUT("/meal-orders/:id/validate", authhttp.RequireRoles("COLLABORATOR"), mealHandler.ValidateOrder)
+	// Kept as a compatibility alias for clients using the previous contract.
 	protected.PATCH("/meal-orders/:id/validate", authhttp.RequireRoles("COLLABORATOR"), mealHandler.ValidateOrder)
+	protected.GET("/collaborator/meal-orders", authhttp.RequireRoles("COLLABORATOR"), mealHandler.ListOrders)
+	protected.GET("/collaborator/meal-orders/:id", authhttp.RequireRoles("COLLABORATOR"), mealHandler.GetOrder)
+	protected.PUT("/collaborator/meal-orders/:id/validate", authhttp.RequireRoles("COLLABORATOR"), mealHandler.ValidateOrder)
+	protected.GET("/collaborator/meal-status-reports/daily", authhttp.RequireRoles("COLLABORATOR"), mealHandler.DailyMealStatusReport)
 	protected.GET("/meal-status-reports", authhttp.RequireRoles("OWNER"), mealHandler.MealStatusReport)
 	protected.GET("/meal-status-reports/export.xlsx", authhttp.RequireRoles("OWNER"), mealHandler.ExportMealStatusReport)
 	protected.GET("/workforce/shift-preview", authhttp.RequireRoles("OWNER"), workforceHandler.ShiftPreview)
@@ -125,6 +131,7 @@ func main() {
 	protected.GET("/users/workers", authhttp.RequireRoles("RRHH"), usersHandler.Workers)
 	protected.GET("/users/collaborators", authhttp.RequireRoles("OWNER"), usersHandler.Collaborators)
 	v1.GET("/ws/meal-orders", authhttp.RequireWebSocketAuth(jwtService), authhttp.RequireRoles("COLLABORATOR"), mealHandler.OrdersWebSocket)
+	v1.GET("/collaborator/ws/meal-orders", authhttp.RequireWebSocketAuth(jwtService), authhttp.RequireRoles("COLLABORATOR"), mealHandler.OrdersWebSocket)
 	server := &http.Server{Addr: ":" + cfg.Port, Handler: r, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
 		log.Printf("API http://localhost:%s | Swagger http://localhost:%s/swagger/index.html", cfg.Port, cfg.Port)

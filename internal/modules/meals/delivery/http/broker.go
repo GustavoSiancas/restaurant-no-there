@@ -30,7 +30,7 @@ func NewBroker(allowedOrigins []string) *Broker {
 	return &Broker{clients: make(map[*websocket.Conn]struct{}), allowed: allowed}
 }
 
-func (b *Broker) Serve(c *gin.Context) {
+func (b *Broker) Serve(c *gin.Context, claimedOrders any) {
 	upgrader := websocket.Upgrader{Subprotocols: []string{"bearer"}, CheckOrigin: func(r *http.Request) bool {
 		if _, allOrigins := b.allowed["*"]; allOrigins {
 			return true
@@ -51,10 +51,19 @@ func (b *Broker) Serve(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	_ = conn.WriteJSON(OrderEvent{Type: "CONNECTED", Data: gin.H{"message": "meal orders live connection established"}})
 	b.mu.Lock()
 	b.clients[conn] = struct{}{}
+	// Register and write the initial snapshot under the same lock used by
+	// Publish, preventing concurrent writes to the WebSocket connection.
+	err = conn.WriteJSON(OrderEvent{Type: "CLAIMED_ORDERS", Data: claimedOrders})
 	b.mu.Unlock()
+	if err != nil {
+		b.mu.Lock()
+		delete(b.clients, conn)
+		b.mu.Unlock()
+		_ = conn.Close()
+		return
+	}
 	defer func() {
 		b.mu.Lock()
 		delete(b.clients, conn)

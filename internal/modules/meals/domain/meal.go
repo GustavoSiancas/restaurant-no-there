@@ -92,6 +92,17 @@ type MealStatusReport struct {
 	TotalPages int                 `json:"total_pages"`
 }
 
+type DailyMealStatusReport struct {
+	Date       time.Time           `json:"date"`
+	MealTypes  []MealType          `json:"meal_types"`
+	Summary    []MealStatusSummary `json:"summary"`
+	Data       []DetailedReportRow `json:"data"`
+	Page       int                 `json:"page"`
+	PageSize   int                 `json:"page_size"`
+	Total      int64               `json:"total"`
+	TotalPages int                 `json:"total_pages"`
+}
+
 type MealWindowClosure struct {
 	NotConsumed           int64 `json:"not_consumed"`
 	RequestedNotValidated int64 `json:"requested_but_not_validated"`

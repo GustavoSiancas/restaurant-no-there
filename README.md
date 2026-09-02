@@ -31,7 +31,7 @@ El contrato completo y los permisos por rol están definidos en `docs/openapi.ya
 
 ## WebSocket
 
-`WS /api/v1/ws/meal-orders` recibe eventos de pedidos. Los navegadores deben enviar los subprotocolos `["bearer", "JWT"]`; el token no se acepta en la URL.
+Las rutas operativas de este rol usan el prefijo `/api/v1/collaborator`. `WS /api/v1/collaborator/ws/meal-orders` recibe un evento `CLAIMED_ORDERS` con los pedidos pendientes al conectarse y cada vez que cambia la lista, además de los eventos de creación y validación. Los navegadores deben enviar los subprotocolos `["bearer", "JWT"]`; el token no se acepta en la URL.
 
 ## Migraciones
 

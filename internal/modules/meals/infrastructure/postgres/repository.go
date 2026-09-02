@@ -301,3 +301,76 @@ func (r *Repository) MealStatusSummary(ctx context.Context, from, to time.Time) 
 	}
 	return result, rows.Err()
 }
+
+func mealTypeStrings(mealTypes []domain.MealType) []string {
+	values := make([]string, len(mealTypes))
+	for index, mealType := range mealTypes {
+		values[index] = string(mealType)
+	}
+	return values
+}
+
+func (r *Repository) DailyMealStatusSummary(ctx context.Context, date time.Time, mealTypes []domain.MealType) ([]domain.MealStatusSummary, error) {
+	rows, err := r.db.Query(ctx, `WITH selected_meals AS (
+		SELECT UNNEST($2::meal_type[]) AS meal_type
+	) SELECT selected_meals.meal_type,
+		COUNT(c.id),
+		COUNT(c.id) FILTER (WHERE c.status IN ('CLAIMED','CLAIMED_BUT_NOT_VALIDATED','VALIDATED')),
+		COUNT(c.id) FILTER (WHERE c.status IN ('CREATED','NOT_CLAIMED')),
+		COUNT(c.id) FILTER (WHERE c.status='CREATED'),
+		COUNT(c.id) FILTER (WHERE c.status='CLAIMED'),
+		COUNT(c.id) FILTER (WHERE c.status='CLAIMED_BUT_NOT_VALIDATED'),
+		COUNT(c.id) FILTER (WHERE c.status='VALIDATED'),
+		COUNT(c.id) FILTER (WHERE c.status='NOT_CLAIMED')
+	FROM selected_meals
+	LEFT JOIN meal_claims c ON c.meal_type=selected_meals.meal_type AND c.service_date=$1::date
+	GROUP BY selected_meals.meal_type
+	ORDER BY CASE selected_meals.meal_type WHEN 'BREAKFAST' THEN 1 WHEN 'LUNCH' THEN 2 ELSE 3 END`, date, mealTypeStrings(mealTypes))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domain.MealStatusSummary, 0, len(mealTypes))
+	for rows.Next() {
+		var item domain.MealStatusSummary
+		var created, claimed, claimedButNotValidated, validated, notClaimed int64
+		if err = rows.Scan(&item.MealType, &item.Total, &item.Claimed, &item.NotClaimed, &created, &claimed, &claimedButNotValidated, &validated, &notClaimed); err != nil {
+			return nil, err
+		}
+		item.ByStatus = map[domain.ClaimStatus]int64{
+			domain.ClaimCreated: created, domain.ClaimClaimed: claimed,
+			domain.ClaimClaimedNotValidated: claimedButNotValidated,
+			domain.ClaimValidated:           validated, domain.ClaimNotClaimed: notClaimed,
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+func (r *Repository) DailyMealStatusRows(ctx context.Context, date time.Time, mealTypes []domain.MealType, limit, offset int) ([]domain.DetailedReportRow, error) {
+	rows, err := r.db.Query(ctx, `SELECT c.id,c.service_date,c.meal_type,a.shift_type,c.status,c.claimed_at,c.validated_at,c.worker_id,
+		BTRIM(p.first_name || ' ' || p.last_name),
+		REPEAT('*',GREATEST(LENGTH(dni.identifier)-4,0)) || RIGHT(dni.identifier,4),
+		wi.employee_code,wi.department
+	FROM meal_claims c
+	JOIN worker_shift_assignments a ON a.id=c.shift_assignment_id
+	JOIN user_profiles p ON p.user_id=c.worker_id
+	JOIN user_credentials dni ON dni.user_id=c.worker_id AND dni.type='DNI' AND dni.active=TRUE
+	JOIN worker_information wi ON wi.user_id=c.worker_id
+	WHERE c.service_date=$1::date AND c.meal_type=ANY($2::meal_type[])
+	ORDER BY CASE c.meal_type WHEN 'BREAKFAST' THEN 1 WHEN 'LUNCH' THEN 2 ELSE 3 END,c.created_at,c.id
+	LIMIT $3 OFFSET $4`, date, mealTypeStrings(mealTypes), limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domain.DetailedReportRow, 0)
+	for rows.Next() {
+		var row domain.DetailedReportRow
+		if err = rows.Scan(&row.ID, &row.ServiceDate, &row.MealType, &row.ShiftType, &row.Status, &row.ClaimedAt, &row.ValidatedAt, &row.WorkerID, &row.FullName, &row.DocumentNumber, &row.EmployeeCode, &row.Department); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}

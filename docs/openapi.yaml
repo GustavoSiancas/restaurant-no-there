@@ -283,7 +283,7 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {description: La comida ya fue reclamada}
-  /meal-orders:
+  /collaborator/meal-orders:
     get:
       tags: [Meals]
       summary: Listar pedidos de comida
@@ -310,6 +310,27 @@ paths:
         '200': {description: Resumen por comida y detalle paginado con estados exactos}
         '400': {$ref: '#/components/responses/BadRequest'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /collaborator/meal-status-reports/daily:
+    get:
+      tags: [Meals]
+      summary: Consultar comidas y estados de un día
+      description: Solo COLLABORATOR. Devuelve el resumen por comida y estado, junto con la lista paginada de trabajadores asignados. meal_type puede repetirse o enviarse separado por comas; si se omite incluye todas las comidas.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: date, in: query, required: true, schema: {type: string, format: date}, example: '2026-09-02'}
+        - name: meal_type
+          in: query
+          required: false
+          schema: {type: array, items: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}
+          style: form
+          explode: true
+        - {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: page_size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200': {description: Resumen diario y personas asignadas paginadas, content: {application/json: {schema: {$ref: '#/components/schemas/DailyMealStatusReport'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /meal-status-reports/export.xlsx:
     get:
       tags: [Meals]
@@ -322,7 +343,7 @@ paths:
         '200': {description: Archivo Excel con hojas Resumen y Detalle}
         '400': {$ref: '#/components/responses/BadRequest'}
         '403': {$ref: '#/components/responses/Forbidden'}
-  /meal-orders/{id}:
+  /collaborator/meal-orders/{id}:
     get:
       tags: [Meals]
       summary: Buscar un pedido por UUID
@@ -332,8 +353,8 @@ paths:
       responses:
         '200': {description: Pedido, content: {application/json: {schema: {$ref: '#/components/schemas/MealOrder'}}}}
         '404': {description: Pedido inexistente}
-  /meal-orders/{id}/validate:
-    patch:
+  /collaborator/meal-orders/{id}/validate:
+    put:
       tags: [Meals]
       summary: Entregar y validar un pedido
       description: Solo COLLABORATOR. La transición CLAIMED a VALIDATED es atómica. Puede validarse desde el inicio de la comida hasta 30 minutos después del fin de su ventana de reclamo.
@@ -370,13 +391,11 @@ paths:
       responses:
         '200':
           description: Archivo XLSX
-  /ws/meal-orders:
+  /collaborator/ws/meal-orders:
     get:
       tags: [Meals]
       summary: WebSocket de pedidos en vivo
-      description: Solo COLLABORATOR. En navegador conectar con los subprotocolos ["bearer", "JWT"]. El token no se acepta en la URL. Emite MEAL_ORDER_CREATED y MEAL_ORDER_VALIDATED.
-      parameters:
-        - {name: access_token, in: query, required: false, schema: {type: string}}
+      description: Solo COLLABORATOR. En navegador conectar con los subprotocolos ["bearer", "JWT"]. El token no se acepta en la URL. Emite CLAIMED_ORDERS con todos los pedidos CLAIMED al conectarse y cada vez que la lista cambia; también emite MEAL_ORDER_CREATED y MEAL_ORDER_VALIDATED con el pedido afectado.
       responses:
         '101': {description: WebSocket conectado}
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -606,6 +625,42 @@ components:
               properties:
                 type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
                 name: {type: string, enum: [BREAKFAST, ALMUERZO, CENA]}
+    MealStatusSummary:
+      type: object
+      properties:
+        meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
+        total: {type: integer, format: int64}
+        claimed: {type: integer, format: int64}
+        not_claimed: {type: integer, format: int64}
+        by_status:
+          type: object
+          additionalProperties: {type: integer, format: int64}
+    DailyMealAssignment:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        service_date: {type: string, format: date}
+        meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
+        shift_type: {type: string, enum: [DAY, NIGHT]}
+        status: {type: string, enum: [CREATED, CLAIMED, NOT_CLAIMED, CLAIMED_BUT_NOT_VALIDATED, VALIDATED]}
+        claimed_at: {type: string, format: date-time, nullable: true}
+        validated_at: {type: string, format: date-time, nullable: true}
+        worker_id: {type: string, format: uuid}
+        full_name: {type: string}
+        document_number: {type: string, example: '****5678'}
+        employee_code: {type: string}
+        department: {type: string, nullable: true}
+    DailyMealStatusReport:
+      type: object
+      properties:
+        date: {type: string, format: date}
+        meal_types: {type: array, items: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}
+        summary: {type: array, items: {$ref: '#/components/schemas/MealStatusSummary'}}
+        data: {type: array, items: {$ref: '#/components/schemas/DailyMealAssignment'}}
+        page: {type: integer}
+        page_size: {type: integer}
+        total: {type: integer, format: int64}
+        total_pages: {type: integer}
     PasswordLogin:
       type: object
       required: [username, password]

@@ -19,6 +19,8 @@ type fakeMealsRepository struct {
 	shift         *domain.CurrentShift
 	statusSummary []domain.MealStatusSummary
 	reportRows    []domain.DetailedReportRow
+	orders        []domain.MealOrder
+	listedStatus  domain.ClaimStatus
 }
 
 func (f *fakeMealsRepository) FindRule(context.Context, domain.MealType) (*domain.ServiceRule, error) {
@@ -53,8 +55,22 @@ func (f *fakeMealsRepository) CreateClaim(_ context.Context, c *domain.Claim) er
 	c.ID = "claim"
 	return nil
 }
-func (f *fakeMealsRepository) ListOrders(context.Context, domain.ClaimStatus) ([]domain.MealOrder, error) {
-	return nil, nil
+func (f *fakeMealsRepository) ListOrders(_ context.Context, status domain.ClaimStatus) ([]domain.MealOrder, error) {
+	f.listedStatus = status
+	return f.orders, nil
+}
+
+func TestListOrdersAcceptsOnlyCollaboratorStatuses(t *testing.T) {
+	repo := &fakeMealsRepository{orders: []domain.MealOrder{{Claim: domain.Claim{ID: "claim-1"}}}}
+	service := NewService(repo)
+
+	orders, err := service.ListOrders(context.Background(), domain.ClaimClaimed)
+	if err != nil || len(orders) != 1 || repo.listedStatus != domain.ClaimClaimed {
+		t.Fatalf("unexpected CLAIMED list result: orders=%+v status=%s err=%v", orders, repo.listedStatus, err)
+	}
+	if _, err = service.ListOrders(context.Background(), domain.ClaimCreated); err == nil {
+		t.Fatal("expected CREATED status to be rejected")
+	}
 }
 func (f *fakeMealsRepository) FindOrderByID(context.Context, string) (*domain.MealOrder, error) {
 	return nil, core.ErrNotFound
@@ -75,6 +91,12 @@ func (f *fakeMealsRepository) DetailedReportRows(context.Context, domain.ReportF
 func (f *fakeMealsRepository) MealStatusSummary(context.Context, time.Time, time.Time) ([]domain.MealStatusSummary, error) {
 	return f.statusSummary, nil
 }
+func (f *fakeMealsRepository) DailyMealStatusSummary(context.Context, time.Time, []domain.MealType) ([]domain.MealStatusSummary, error) {
+	return f.statusSummary, nil
+}
+func (f *fakeMealsRepository) DailyMealStatusRows(context.Context, time.Time, []domain.MealType, int, int) ([]domain.DetailedReportRow, error) {
+	return f.reportRows, nil
+}
 
 func TestMealStatusReportReturnsSummaryAndPaginatedDetail(t *testing.T) {
 	date := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
@@ -91,6 +113,21 @@ func TestMealStatusReportReturnsSummaryAndPaginatedDetail(t *testing.T) {
 	}
 	if report.Total != 9 || report.TotalPages != 2 || len(report.Data) != 1 {
 		t.Fatalf("unexpected report: %+v", report)
+	}
+}
+
+func TestDailyMealStatusReportFiltersMealsAndPaginates(t *testing.T) {
+	date := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+	repo := &fakeMealsRepository{
+		statusSummary: []domain.MealStatusSummary{{MealType: domain.Lunch, Total: 21}},
+		reportRows:    []domain.DetailedReportRow{{ID: "claim"}},
+	}
+	report, err := NewService(repo).DailyMealStatusReport(context.Background(), date, []domain.MealType{domain.Lunch, domain.Lunch}, 2, 20)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(report.MealTypes) != 1 || report.MealTypes[0] != domain.Lunch || report.Total != 21 || report.TotalPages != 2 || len(report.Data) != 1 {
+		t.Fatalf("unexpected daily report: %+v", report)
 	}
 }
 

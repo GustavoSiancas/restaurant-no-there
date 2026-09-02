@@ -71,6 +71,7 @@ func (h *Handler) ConfirmPrint(c *gin.Context) {
 	if order, findErr := h.service.FindOrder(c, claim.ID); findErr == nil {
 		h.broker.Publish(OrderEvent{Type: "MEAL_ORDER_CREATED", Data: order})
 	}
+	h.publishClaimedOrders(c)
 	c.JSON(http.StatusCreated, gin.H{"claim_created": true, "claim": claim})
 }
 
@@ -124,10 +125,62 @@ func (h *Handler) ValidateOrder(c *gin.Context) {
 		return
 	}
 	h.broker.Publish(OrderEvent{Type: "MEAL_ORDER_VALIDATED", Data: order})
+	h.publishClaimedOrders(c)
 	c.JSON(http.StatusOK, order)
 }
 
-func (h *Handler) OrdersWebSocket(c *gin.Context) { h.broker.Serve(c) }
+func (h *Handler) publishClaimedOrders(c *gin.Context) {
+	orders, err := h.service.ListOrders(c, domain.ClaimClaimed)
+	if err == nil {
+		h.broker.Publish(OrderEvent{Type: "CLAIMED_ORDERS", Data: orders})
+	}
+}
+
+func (h *Handler) OrdersWebSocket(c *gin.Context) {
+	orders, err := h.service.ListOrders(c, domain.ClaimClaimed)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not obtain claimed meal orders"})
+		return
+	}
+	h.broker.Serve(c, orders)
+}
+
+func (h *Handler) DailyMealStatusReport(c *gin.Context) {
+	date, err := time.Parse("2006-01-02", strings.TrimSpace(c.Query("date")))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "date is required and must use YYYY-MM-DD"})
+		return
+	}
+	mealTypes := make([]domain.MealType, 0)
+	for _, value := range c.QueryArray("meal_type") {
+		for _, item := range strings.Split(value, ",") {
+			if item = strings.TrimSpace(item); item != "" {
+				mealTypes = append(mealTypes, domain.MealType(strings.ToUpper(item)))
+			}
+		}
+	}
+	page, pageSize := 1, 20
+	if value := c.Query("page"); value != "" {
+		page, err = strconv.Atoi(value)
+		if err != nil || page < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "page must be a positive integer"})
+			return
+		}
+	}
+	if value := c.Query("page_size"); value != "" {
+		pageSize, err = strconv.Atoi(value)
+		if err != nil || pageSize < 1 || pageSize > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be between 1 and 100"})
+			return
+		}
+	}
+	report, err := h.service.DailyMealStatusReport(c, date, mealTypes, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, report)
+}
 
 func mealStatusReportQuery(c *gin.Context) (time.Time, time.Time, int, int, error) {
 	from, fromErr := time.Parse("2006-01-02", strings.TrimSpace(c.Query("from")))

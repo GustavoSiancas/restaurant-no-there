@@ -179,6 +179,54 @@ func (s *Service) MealStatusReport(ctx context.Context, from, to time.Time, page
 	return &domain.MealStatusReport{From: from, To: to, Summary: summary, Data: rows, Page: page, PageSize: pageSize, Total: total, TotalPages: totalPages}, nil
 }
 
+func (s *Service) DailyMealStatusReport(ctx context.Context, date time.Time, mealTypes []domain.MealType, page, pageSize int) (*domain.DailyMealStatusReport, error) {
+	if date.IsZero() {
+		return nil, fmt.Errorf("date is required")
+	}
+	location := s.peruLocation()
+	date = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, location)
+	if len(mealTypes) == 0 {
+		mealTypes = []domain.MealType{domain.Breakfast, domain.Lunch, domain.Dinner}
+	}
+	seen := make(map[domain.MealType]struct{}, len(mealTypes))
+	filtered := make([]domain.MealType, 0, len(mealTypes))
+	for _, mealType := range mealTypes {
+		if !mealType.Valid() {
+			return nil, fmt.Errorf("meal_type must be BREAKFAST, LUNCH or DINNER")
+		}
+		if _, exists := seen[mealType]; !exists {
+			seen[mealType] = struct{}{}
+			filtered = append(filtered, mealType)
+		}
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	summary, err := s.repo.DailyMealStatusSummary(ctx, date, filtered)
+	if err != nil {
+		return nil, err
+	}
+	var total int64
+	for _, item := range summary {
+		total += item.Total
+	}
+	rows, err := s.repo.DailyMealStatusRows(ctx, date, filtered, pageSize, (page-1)*pageSize)
+	if err != nil {
+		return nil, err
+	}
+	totalPages := 0
+	if total > 0 {
+		totalPages = int((total + int64(pageSize) - 1) / int64(pageSize))
+	}
+	return &domain.DailyMealStatusReport{Date: date, MealTypes: filtered, Summary: summary, Data: rows, Page: page, PageSize: pageSize, Total: total, TotalPages: totalPages}, nil
+}
+
 func (s *Service) ListOrders(ctx context.Context, status domain.ClaimStatus) ([]domain.MealOrder, error) {
 	if status == "" {
 		status = domain.ClaimClaimed
