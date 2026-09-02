@@ -91,10 +91,10 @@ func (f *fakeMealsRepository) DetailedReportRows(context.Context, domain.ReportF
 func (f *fakeMealsRepository) MealStatusSummary(context.Context, time.Time, time.Time) ([]domain.MealStatusSummary, error) {
 	return f.statusSummary, nil
 }
-func (f *fakeMealsRepository) DailyMealStatusSummary(context.Context, time.Time, []domain.MealType) ([]domain.MealStatusSummary, error) {
-	return f.statusSummary, nil
+func (f *fakeMealsRepository) CountDailyMealStatusRows(context.Context, time.Time, domain.MealType) (int64, error) {
+	return 21, nil
 }
-func (f *fakeMealsRepository) DailyMealStatusRows(context.Context, time.Time, []domain.MealType, int, int) ([]domain.DetailedReportRow, error) {
+func (f *fakeMealsRepository) DailyMealStatusRows(context.Context, time.Time, domain.MealType, int, int) ([]domain.DetailedReportRow, error) {
 	return f.reportRows, nil
 }
 
@@ -116,17 +116,16 @@ func TestMealStatusReportReturnsSummaryAndPaginatedDetail(t *testing.T) {
 	}
 }
 
-func TestDailyMealStatusReportFiltersMealsAndPaginates(t *testing.T) {
+func TestDailyMealStatusReportFiltersOneMealAndPaginates(t *testing.T) {
 	date := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
 	repo := &fakeMealsRepository{
-		statusSummary: []domain.MealStatusSummary{{MealType: domain.Lunch, Total: 21}},
-		reportRows:    []domain.DetailedReportRow{{ID: "claim"}},
+		reportRows: []domain.DetailedReportRow{{ID: "claim"}},
 	}
-	report, err := NewService(repo).DailyMealStatusReport(context.Background(), date, []domain.MealType{domain.Lunch, domain.Lunch}, 2, 20)
+	report, err := NewService(repo).DailyMealStatusReport(context.Background(), date, domain.Lunch, 2, 20)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(report.MealTypes) != 1 || report.MealTypes[0] != domain.Lunch || report.Total != 21 || report.TotalPages != 2 || len(report.Data) != 1 {
+	if report.MealType != domain.Lunch || report.Total != 21 || report.TotalPages != 2 || len(report.Data) != 1 {
 		t.Fatalf("unexpected daily report: %+v", report)
 	}
 }

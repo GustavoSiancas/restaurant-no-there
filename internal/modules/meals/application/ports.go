@@ -23,6 +23,6 @@ type Repository interface {
 	CloseMealWindow(ctx context.Context, mealType domain.MealType, serviceDate, closedAt time.Time) (domain.MealWindowClosure, error)
 	DetailedReportRows(ctx context.Context, filters domain.ReportFilters, limit, offset int) ([]domain.DetailedReportRow, error)
 	MealStatusSummary(ctx context.Context, from, to time.Time) ([]domain.MealStatusSummary, error)
-	DailyMealStatusSummary(ctx context.Context, date time.Time, mealTypes []domain.MealType) ([]domain.MealStatusSummary, error)
-	DailyMealStatusRows(ctx context.Context, date time.Time, mealTypes []domain.MealType, limit, offset int) ([]domain.DetailedReportRow, error)
+	CountDailyMealStatusRows(ctx context.Context, date time.Time, mealType domain.MealType) (int64, error)
+	DailyMealStatusRows(ctx context.Context, date time.Time, mealType domain.MealType, limit, offset int) ([]domain.DetailedReportRow, error)
 }

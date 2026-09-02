@@ -314,20 +314,15 @@ paths:
     get:
       tags: [Meals]
       summary: Consultar comidas y estados de un día
-      description: Solo COLLABORATOR. Devuelve el resumen por comida y estado, junto con la lista paginada de trabajadores asignados. meal_type puede repetirse o enviarse separado por comas; si se omite incluye todas las comidas.
+      description: Solo COLLABORATOR. Devuelve la lista paginada de trabajadores asignados y el estado de una sola comida para la fecha indicada.
       security: [{bearerAuth: []}]
       parameters:
         - {name: date, in: query, required: true, schema: {type: string, format: date}, example: '2026-09-02'}
-        - name: meal_type
-          in: query
-          required: false
-          schema: {type: array, items: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}
-          style: form
-          explode: true
+        - {name: meal_type, in: query, required: true, schema: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}
         - {name: page, in: query, required: false, schema: {type: integer, minimum: 1, default: 1}}
         - {name: page_size, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
       responses:
-        '200': {description: Resumen diario y personas asignadas paginadas, content: {application/json: {schema: {$ref: '#/components/schemas/DailyMealStatusReport'}}}}
+        '200': {description: Personas asignadas y sus estados, paginadas, content: {application/json: {schema: {$ref: '#/components/schemas/DailyMealStatusReport'}}}}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -654,8 +649,7 @@ components:
       type: object
       properties:
         date: {type: string, format: date}
-        meal_types: {type: array, items: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}}
-        summary: {type: array, items: {$ref: '#/components/schemas/MealStatusSummary'}}
+        meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
         data: {type: array, items: {$ref: '#/components/schemas/DailyMealAssignment'}}
         page: {type: integer}
         page_size: {type: integer}

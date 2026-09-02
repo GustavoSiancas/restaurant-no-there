@@ -151,14 +151,12 @@ func (h *Handler) DailyMealStatusReport(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "date is required and must use YYYY-MM-DD"})
 		return
 	}
-	mealTypes := make([]domain.MealType, 0)
-	for _, value := range c.QueryArray("meal_type") {
-		for _, item := range strings.Split(value, ",") {
-			if item = strings.TrimSpace(item); item != "" {
-				mealTypes = append(mealTypes, domain.MealType(strings.ToUpper(item)))
-			}
-		}
+	mealValues := c.QueryArray("meal_type")
+	if len(mealValues) != 1 || strings.Contains(mealValues[0], ",") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "exactly one meal_type is required"})
+		return
 	}
+	mealType := domain.MealType(strings.ToUpper(strings.TrimSpace(mealValues[0])))
 	page, pageSize := 1, 20
 	if value := c.Query("page"); value != "" {
 		page, err = strconv.Atoi(value)
@@ -174,7 +172,7 @@ func (h *Handler) DailyMealStatusReport(c *gin.Context) {
 			return
 		}
 	}
-	report, err := h.service.DailyMealStatusReport(c, date, mealTypes, page, pageSize)
+	report, err := h.service.DailyMealStatusReport(c, date, mealType, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

@@ -94,8 +94,7 @@ type MealStatusReport struct {
 
 type DailyMealStatusReport struct {
 	Date       time.Time           `json:"date"`
-	MealTypes  []MealType          `json:"meal_types"`
-	Summary    []MealStatusSummary `json:"summary"`
+	MealType   MealType            `json:"meal_type"`
 	Data       []DetailedReportRow `json:"data"`
 	Page       int                 `json:"page"`
 	PageSize   int                 `json:"page_size"`
