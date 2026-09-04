@@ -30,6 +30,9 @@ func (r *passwordRepository) FindMyUser(context.Context, string) (*domain.MyUser
 func (r *passwordRepository) ListByRoles(context.Context, ...domain.Role) ([]domain.MyUser, error) {
 	return nil, nil
 }
+func (r *passwordRepository) ListUsers(context.Context) ([]domain.UserListItem, error) {
+	return nil, nil
+}
 func (r *passwordRepository) FindPasswordCredential(context.Context, string) (*domain.User, string, error) {
 	return nil, "", core.ErrNotFound
 }
@@ -38,6 +41,9 @@ func (r *passwordRepository) FindPasswordHashByUserID(context.Context, string) (
 		return "", core.ErrNotFound
 	}
 	return r.currentHash, nil
+}
+func (r *passwordRepository) FindWorkerPasswordCredential(context.Context, string) (*domain.User, string, error) {
+	return nil, "", core.ErrNotFound
 }
 func (r *passwordRepository) UpdatePasswordHash(_ context.Context, _ string, hash string) error {
 	r.updatedHash = hash
@@ -78,11 +84,11 @@ func TestChangePasswordRejectsIncorrectOldPassword(t *testing.T) {
 	}
 }
 
-func TestResetPasswordRejectsWorker(t *testing.T) {
+func TestResetPasswordCreatesPasswordForWorker(t *testing.T) {
 	repository := &passwordRepository{user: &domain.User{Role: domain.RoleWorker}}
 	err := NewService(repository).ResetPassword(context.Background(), "worker-1", "new-password")
-	if err == nil || repository.updatedHash != "" {
-		t.Fatalf("expected WORKER reset to be rejected, got %v", err)
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(repository.updatedHash), []byte("new-password")) != nil {
+		t.Fatalf("expected WORKER password to be reset, got %v", err)
 	}
 }
 

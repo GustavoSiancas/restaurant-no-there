@@ -9,7 +9,7 @@ import (
 )
 
 type Repository interface {
-	CreateWorker(ctx context.Context, user *userdomain.User, info *domain.WorkerInformation, dni string) error
+	CreateWorker(ctx context.Context, user *userdomain.User, info *domain.WorkerInformation, dni, passwordHash string) error
 	FindWorkerInformation(ctx context.Context, userID string) (*domain.WorkerInformation, error)
 	CreateAssignment(ctx context.Context, assignment *domain.WorkerShiftAssignment) error
 	ReplaceOpenAssignments(ctx context.Context, workerIDs []string, shiftType domain.ShiftType, from, to time.Time, assignedBy string) (created, replaced int, err error)

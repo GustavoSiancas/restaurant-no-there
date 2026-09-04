@@ -135,8 +135,8 @@ paths:
   /auth/login/dni:
     post:
       tags: [Auth]
-      summary: Login temporal de WORKER por DNI
-      description: Este mecanismo será reemplazable por Face Scan. Emite un access token de 45 segundos y no genera refresh token.
+      summary: Login temporal de WORKER por DNI y contraseña
+      description: Valida el DNI y la contraseña del trabajador. Emite un access token de 45 segundos y no genera refresh token.
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DNILogin'}}}}
       responses:
         '200': {description: Access token temporal sin refresh token, content: {application/json: {schema: {$ref: '#/components/schemas/WorkerAccessToken'}}}}
@@ -160,11 +160,27 @@ paths:
         '200': {description: Usuario autenticado, content: {application/json: {schema: {$ref: '#/components/schemas/MyUser'}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {description: Usuario no encontrado}
+  /users:
+    get:
+      tags: [Users]
+      summary: Listar todos los usuarios
+      description: Solo ADMIN. Devuelve los usuarios con su user_id para permitir su selección y administración desde el frontend.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Lista de usuarios
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/UserListItem'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /users/my/password:
     patch:
       tags: [Users]
       summary: Cambiar mi contraseña
-      description: Obtiene el usuario desde el Bearer token y verifica la contraseña actual antes de guardar la nueva. No está disponible para WORKER porque inicia sesión mediante DNI.
+      description: Obtiene el usuario desde el Bearer token y verifica la contraseña actual antes de guardar la nueva. También está disponible para WORKER.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
@@ -180,7 +196,7 @@ paths:
     put:
       tags: [Users]
       summary: Restablecer la contraseña de un usuario
-      description: Solo ADMIN. Restablece la contraseña de un usuario de gestión o colaborador sin solicitar su contraseña anterior. WORKER no posee contraseña.
+      description: Solo ADMIN. Restablece la contraseña de cualquier usuario, incluido WORKER, sin solicitar su contraseña anterior.
       security: [{bearerAuth: []}]
       parameters:
         - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
@@ -210,7 +226,7 @@ paths:
     post:
       tags: [Workforce]
       summary: Agendar un trabajador en un turno
-      description: Solo RRHH. Máximo un turno por trabajador y fecha. Puede asignarse hasta las 23:59 del día anterior al turno, según America/Lima.
+      description: Solo RRHH. Máximo un turno por trabajador y fecha. Puede asignarse hasta las 18:00 del día anterior al turno, según America/Lima.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
@@ -241,7 +257,7 @@ paths:
     put:
       tags: [Workforce]
       summary: Modificar un turno asignado
-      description: Solo RRHH. Puede modificarse hasta las 23:59 del día anterior al turno; desde el inicio del día queda bloqueado según America/Lima.
+      description: Solo RRHH. Puede modificarse hasta las 18:00 del día anterior al turno; después de esa hora queda bloqueado según America/Lima.
       security: [{bearerAuth: []}]
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
       requestBody:
@@ -258,7 +274,7 @@ paths:
     delete:
       tags: [Workforce]
       summary: Eliminar un turno asignado
-      description: Solo RRHH. Puede eliminarse hasta las 23:59 del día anterior; desde el inicio del día del turno queda bloqueado según America/Lima.
+      description: Solo RRHH. Puede eliminarse hasta las 18:00 del día anterior; después de esa hora queda bloqueado según America/Lima.
       security: [{bearerAuth: []}]
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
       responses:
@@ -459,6 +475,15 @@ components:
     Unauthorized: {description: Credenciales inválidas, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     Forbidden: {description: El rol autenticado no tiene permiso, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
   schemas:
+    UserListItem:
+      type: object
+      properties:
+        user_id: {type: string, format: uuid}
+        role: {type: string, enum: [ADMIN, OWNER, RRHH, WORKER, COLLABORATOR]}
+        active: {type: boolean}
+        first_name: {type: string}
+        last_name: {type: string}
+        email: {type: string, format: email}
     ChangePasswordRequest:
       type: object
       required: [old_password, new_password]
@@ -500,6 +525,7 @@ components:
         last_name: {type: string}
     WorkerRegisterRequest:
       type: object
+      description: La contraseña inicial del trabajador será el mismo número de DNI.
       required: [dni, first_name, last_name, employee_code]
       properties:
         dni: {type: string}
@@ -732,8 +758,8 @@ components:
       properties: {username: {type: string}, password: {type: string}}
     DNILogin:
       type: object
-      required: [dni]
-      properties: {dni: {type: string}}
+      required: [dni, password]
+      properties: {dni: {type: string}, password: {type: string, format: password}}
     RefreshRequest:
       type: object
       required: [refresh_token]

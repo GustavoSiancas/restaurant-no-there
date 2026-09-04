@@ -17,7 +17,7 @@ type Repository struct{ db *pgxpool.Pool }
 
 func New(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
 
-func (r *Repository) CreateWorker(ctx context.Context, u *userdomain.User, i *domain.WorkerInformation, dni string) error {
+func (r *Repository) CreateWorker(ctx context.Context, u *userdomain.User, i *domain.WorkerInformation, dni, passwordHash string) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -32,6 +32,9 @@ func (r *Repository) CreateWorker(ctx context.Context, u *userdomain.User, i *do
 		return translate(err)
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO user_credentials(user_id,type,identifier) VALUES($1,'DNI',$2)`, u.ID, dni); err != nil {
+		return translate(err)
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO user_credentials(user_id,type,identifier,secret_hash) VALUES($1,'PASSWORD',$2,$3)`, u.ID, u.ID, passwordHash); err != nil {
 		return translate(err)
 	}
 	err = tx.QueryRow(ctx, `INSERT INTO worker_information (user_id,employee_code,photo_url,job_title,department,phone,address,hire_date,emergency_contact_name,emergency_contact_phone,notes)

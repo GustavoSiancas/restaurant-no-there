@@ -9,6 +9,7 @@ import (
 	core "backend/internal/core/domain"
 	userdomain "backend/internal/modules/users/domain"
 	"backend/internal/modules/workforce/domain"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type fakeUsers struct{ user *userdomain.User }
@@ -23,11 +24,15 @@ func (f fakeUsers) FindMyUser(context.Context, string) (*userdomain.MyUser, erro
 func (f fakeUsers) ListByRoles(context.Context, ...userdomain.Role) ([]userdomain.MyUser, error) {
 	return nil, nil
 }
+func (f fakeUsers) ListUsers(context.Context) ([]userdomain.UserListItem, error) { return nil, nil }
 func (f fakeUsers) FindPasswordCredential(context.Context, string) (*userdomain.User, string, error) {
 	return nil, "", core.ErrNotFound
 }
 func (f fakeUsers) FindPasswordHashByUserID(context.Context, string) (string, error) {
 	return "", core.ErrNotFound
+}
+func (f fakeUsers) FindWorkerPasswordCredential(context.Context, string) (*userdomain.User, string, error) {
+	return nil, "", core.ErrNotFound
 }
 func (f fakeUsers) UpdatePasswordHash(context.Context, string, string) error { return nil }
 func (f fakeUsers) FindByDNI(context.Context, string) (*userdomain.User, error) {
@@ -39,6 +44,7 @@ func (f fakeUsers) RoleExists(context.Context, userdomain.Role) (bool, error) { 
 type fakeRepository struct {
 	existing     *domain.WorkerShiftAssignment
 	workerInfo   *domain.WorkerInformation
+	passwordHash string
 	created      bool
 	bulkCreated  int
 	bulkReplaced int
@@ -46,8 +52,9 @@ type fakeRepository struct {
 	rules        []domain.PreviewRule
 }
 
-func (f *fakeRepository) CreateWorker(_ context.Context, _ *userdomain.User, info *domain.WorkerInformation, _ string) error {
+func (f *fakeRepository) CreateWorker(_ context.Context, _ *userdomain.User, info *domain.WorkerInformation, _ string, passwordHash string) error {
 	f.workerInfo = info
+	f.passwordHash = passwordHash
 	return nil
 }
 
@@ -115,6 +122,9 @@ func TestRegisterWorkerAcceptsOptionalPhotoURL(t *testing.T) {
 			if repo.workerInfo != info {
 				t.Fatal("worker info was not sent to repository")
 			}
+			if bcrypt.CompareHashAndPassword([]byte(repo.passwordHash), []byte("12345678")) != nil {
+				t.Fatal("initial worker password must be a bcrypt hash of the DNI")
+			}
 		})
 	}
 }
@@ -180,21 +190,36 @@ func TestDeleteAssignmentIsLockedOnWorkDate(t *testing.T) {
 	}
 }
 
-func TestUpdateAssignmentIsAllowedUntilPreviousDay2359InLima(t *testing.T) {
+func TestUpdateAssignmentIsAllowedUntilPreviousDay1800InLima(t *testing.T) {
 	peru := time.FixedZone("UTC-5", -5*60*60)
 	repo := &fakeRepository{existing: &domain.WorkerShiftAssignment{
 		ID: "assignment", WorkerID: "worker", Status: domain.ShiftOpen,
 		WorkDate: time.Date(2026, 9, 2, 0, 0, 0, 0, peru),
 	}}
 	service := NewService(repo, fakeUsers{})
-	service.now = func() time.Time { return time.Date(2026, 9, 1, 23, 59, 59, 0, peru) }
+	service.now = func() time.Time { return time.Date(2026, 9, 1, 18, 0, 0, 0, peru) }
 
 	_, err := service.UpdateAssignment(context.Background(), "assignment", domain.ShiftNight, time.Date(2026, 9, 2, 0, 0, 0, 0, peru), "")
 	if err != nil {
 		t.Fatalf("expected update to be allowed, got %v", err)
 	}
 	if !repo.created {
-		t.Fatal("assignment should be updated before midnight")
+		t.Fatal("assignment should be updated at the 18:00 deadline")
+	}
+}
+
+func TestUpdateAssignmentIsLockedAfterPreviousDay1800InLima(t *testing.T) {
+	peru := time.FixedZone("UTC-5", -5*60*60)
+	repo := &fakeRepository{existing: &domain.WorkerShiftAssignment{
+		ID: "assignment", WorkerID: "worker", Status: domain.ShiftOpen,
+		WorkDate: time.Date(2026, 9, 2, 0, 0, 0, 0, peru),
+	}}
+	service := NewService(repo, fakeUsers{})
+	service.now = func() time.Time { return time.Date(2026, 9, 1, 18, 0, 1, 0, peru) }
+
+	_, err := service.UpdateAssignment(context.Background(), "assignment", domain.ShiftNight, time.Date(2026, 9, 2, 0, 0, 0, 0, peru), "")
+	if !errors.Is(err, core.ErrLocked) || repo.created {
+		t.Fatalf("expected assignment to be locked after 18:00, got %v", err)
 	}
 }
 
@@ -210,7 +235,7 @@ func TestAssignWorkerRequiresAtLeastTomorrow(t *testing.T) {
 			repo := &fakeRepository{}
 			user := &userdomain.User{Entity: core.Entity{ID: "worker"}, Role: userdomain.RoleWorker, Active: true}
 			service := NewService(repo, fakeUsers{user: user})
-			service.now = func() time.Time { return time.Date(2026, 8, 30, 23, 59, 0, 0, peru) }
+			service.now = func() time.Time { return time.Date(2026, 8, 30, 17, 59, 0, 0, peru) }
 			_, err := service.AssignWorker(context.Background(), "worker", domain.ShiftDay, "rrhh", test.date, "")
 			if test.wantError && err == nil {
 				t.Fatal("expected date validation error")
@@ -230,7 +255,7 @@ func TestAddMassiveShiftWorkersAllowsTomorrowAndReturnsCounts(t *testing.T) {
 	repo := &fakeRepository{bulkCreated: 14, bulkReplaced: 3}
 	user := &userdomain.User{Entity: core.Entity{ID: "worker"}, Role: userdomain.RoleWorker, Active: true}
 	service := NewService(repo, fakeUsers{user: user})
-	service.now = func() time.Time { return time.Date(2026, 9, 1, 23, 59, 59, 0, peru) }
+	service.now = func() time.Time { return time.Date(2026, 9, 1, 18, 0, 0, 0, peru) }
 
 	result, err := service.AddMassiveShiftWorkers(context.Background(), []string{"worker", "worker"}, domain.ShiftDay, "rrhh", time.Date(2026, 9, 2, 0, 0, 0, 0, peru), time.Date(2026, 9, 15, 0, 0, 0, 0, peru))
 	if err != nil {

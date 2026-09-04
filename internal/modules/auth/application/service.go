@@ -42,9 +42,9 @@ func (s *Service) LoginPassword(ctx context.Context, username, password, agent, 
 	}
 	return s.issueWithRefresh(ctx, u, agent, ip)
 }
-func (s *Service) LoginDNI(ctx context.Context, dni, agent, ip string) (*TokenPair, error) {
-	u, err := s.users.FindByDNI(ctx, dni)
-	if err != nil || u.Role != userdomain.RoleWorker || !u.Active {
+func (s *Service) LoginDNI(ctx context.Context, dni, password, agent, ip string) (*TokenPair, error) {
+	u, passwordHash, err := s.users.FindWorkerPasswordCredential(ctx, dni)
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)) != nil || u.Role != userdomain.RoleWorker || !u.Active {
 		return nil, fmt.Errorf("invalid credentials")
 	}
 	if err = s.tokens.RevokeAllByUser(ctx, u.ID, time.Now()); err != nil {

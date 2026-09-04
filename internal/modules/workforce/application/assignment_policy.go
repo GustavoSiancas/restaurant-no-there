@@ -6,14 +6,14 @@ import (
 )
 
 var ErrAssignmentOutsideAllowedWeek = errors.New(
-	"worker shift assignments can only be created or modified until the day before the shift",
+	"worker shift assignments can only be created, modified or deleted until 18:00 on the day before the shift (America/Lima)",
 )
 
 func CanManageAssignmentForDate(workDate time.Time, now time.Time) bool {
 	workDate = normalizeDate(workDate)
-	now = normalizeDate(now)
-
-	return workDate.After(now)
+	now = now.In(workDate.Location())
+	deadline := workDate.AddDate(0, 0, -1).Add(18 * time.Hour)
+	return !now.After(deadline)
 }
 
 func normalizeDate(t time.Time) time.Time {

@@ -7,6 +7,7 @@ import (
 
 	"backend/internal/config"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -49,6 +50,13 @@ func main() {
 			log.Fatal(err)
 		}
 		if _, err = tx.Exec(ctx, `INSERT INTO user_credentials(user_id,type,identifier) VALUES($1,'DNI',$2)`, userID, dni); err != nil {
+			log.Fatal(err)
+		}
+		passwordHash, hashErr := bcrypt.GenerateFromPassword([]byte(dni), bcrypt.DefaultCost)
+		if hashErr != nil {
+			log.Fatal(hashErr)
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO user_credentials(user_id,type,identifier,secret_hash) VALUES($1,'PASSWORD',$1::text,$2)`, userID, passwordHash); err != nil {
 			log.Fatal(err)
 		}
 		if _, err = tx.Exec(ctx, `INSERT INTO worker_information(user_id,employee_code,job_title,department,hire_date,notes) VALUES($1,$2,'Colaborador','Operaciones',CURRENT_DATE,'Generado por seed de desarrollo')`, userID, employeeCode); err != nil {

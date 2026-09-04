@@ -152,6 +152,7 @@ func main() {
 	protected.GET("/meal-schedules", authhttp.RequireRoles("WORKER"), mealHandler.ListSchedules)
 	protected.GET("/workers/my/status", authhttp.RequireRoles("WORKER"), mealHandler.WorkerStatus)
 	protected.GET("/users/my", usersHandler.My)
+	protected.GET("/users", authhttp.RequireRoles("ADMIN"), usersHandler.Users)
 	protected.PATCH("/users/my/password", usersHandler.ChangePassword)
 	protected.PUT("/users/:id/password/reset", authhttp.RequireRoles("ADMIN"), usersHandler.ResetPassword)
 	protected.GET("/users/workers", authhttp.RequireRoles("RRHH"), usersHandler.Workers)

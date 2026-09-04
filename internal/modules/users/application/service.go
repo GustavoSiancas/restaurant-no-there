@@ -64,6 +64,9 @@ func (s *Service) FindMyUser(ctx context.Context, id string) (*domain.MyUser, er
 func (s *Service) ListByRoles(ctx context.Context, roles ...domain.Role) ([]domain.MyUser, error) {
 	return s.repo.ListByRoles(ctx, roles...)
 }
+func (s *Service) ListUsers(ctx context.Context) ([]domain.UserListItem, error) {
+	return s.repo.ListUsers(ctx)
+}
 
 func validateNewPassword(password string) error {
 	if len(password) < 8 {
@@ -97,12 +100,9 @@ func (s *Service) ResetPassword(ctx context.Context, userID, newPassword string)
 	if err := validateNewPassword(newPassword); err != nil {
 		return err
 	}
-	user, err := s.repo.FindByID(ctx, userID)
+	_, err := s.repo.FindByID(ctx, userID)
 	if err != nil {
 		return err
-	}
-	if user.Role == domain.RoleWorker {
-		return fmt.Errorf("WORKER users authenticate with DNI and do not have a password: %w", core.ErrInvalidInput)
 	}
 	newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {

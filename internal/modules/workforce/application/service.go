@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/bcrypt"
 	"strings"
 	"time"
 
@@ -53,9 +54,13 @@ func (s *Service) RegisterWorker(ctx context.Context, in RegisterWorkerInput) (*
 	if dni == nil || strings.TrimSpace(in.FirstName) == "" || strings.TrimSpace(in.LastName) == "" || strings.TrimSpace(in.EmployeeCode) == "" {
 		return nil, nil, fmt.Errorf("dni, first_name, last_name and employee_code are required")
 	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(*dni), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, nil, err
+	}
 	user := &userdomain.User{Role: userdomain.RoleWorker}
 	info := &domain.WorkerInformation{FirstName: strings.TrimSpace(in.FirstName), LastName: strings.TrimSpace(in.LastName), Email: nullable(in.Email), PhotoURL: nullable(in.PhotoURL), EmployeeCode: strings.TrimSpace(in.EmployeeCode), JobTitle: nullable(in.JobTitle), Department: nullable(in.Department), Phone: nullable(in.Phone), Address: nullable(in.Address), HireDate: in.HireDate, EmergencyContactName: nullable(in.EmergencyContactName), EmergencyContactPhone: nullable(in.EmergencyContactPhone), Notes: nullable(in.Notes)}
-	if err := s.repo.CreateWorker(ctx, user, info, *dni); err != nil {
+	if err := s.repo.CreateWorker(ctx, user, info, *dni, string(passwordHash)); err != nil {
 		return nil, nil, err
 	}
 	return user, info, nil
@@ -66,7 +71,7 @@ func (s *Service) AssignWorker(ctx context.Context, workerID string, shiftType d
 		return nil, fmt.Errorf("work_date is required")
 	}
 	date = s.peruDate(date)
-	if !CanManageAssignmentForDate(date, s.peruToday()) {
+	if !CanManageAssignmentForDate(date, s.peruNow()) {
 		return nil, ErrAssignmentOutsideAllowedWeek
 	}
 	worker, err := s.users.FindByID(ctx, workerID)
@@ -106,7 +111,7 @@ func (s *Service) AddMassiveShiftWorkers(ctx context.Context, workerIDs []string
 	if from.After(to) {
 		return nil, fmt.Errorf("dates.from must be before or equal to dates.to")
 	}
-	if !CanManageAssignmentForDate(from, s.peruToday()) {
+	if !CanManageAssignmentForDate(from, s.peruNow()) {
 		return nil, ErrAssignmentOutsideAllowedWeek
 	}
 
@@ -156,8 +161,8 @@ func (s *Service) UpdateAssignment(ctx context.Context, id string, shiftType dom
 	if existing.Status != domain.ShiftOpen {
 		return nil, core.ErrLocked
 	}
-	if !CanManageAssignmentForDate(existing.WorkDate, s.peruToday()) ||
-		!CanManageAssignmentForDate(date, s.peruToday()) {
+	if !CanManageAssignmentForDate(existing.WorkDate, s.peruNow()) ||
+		!CanManageAssignmentForDate(date, s.peruNow()) {
 		return nil, core.ErrLocked
 	}
 	if occupied, findErr := s.repo.FindAssignmentByWorkerAndDate(ctx, existing.WorkerID, date); findErr == nil && occupied.ID != existing.ID {
@@ -183,7 +188,7 @@ func (s *Service) DeleteAssignment(ctx context.Context, id string) error {
 	if assignment.Status != domain.ShiftOpen {
 		return core.ErrLocked
 	}
-	if !CanManageAssignmentForDate(assignment.WorkDate, s.peruToday()) {
+	if !CanManageAssignmentForDate(assignment.WorkDate, s.peruNow()) {
 		return core.ErrLocked
 	}
 
@@ -195,6 +200,7 @@ func (s *Service) DeleteAssignment(ctx context.Context, id string) error {
 }
 
 func (s *Service) peruToday() time.Time { return s.peruDate(s.now().In(s.peruLocation())) }
+func (s *Service) peruNow() time.Time   { return s.now().In(s.peruLocation()) }
 func (s *Service) peruDate(value time.Time) time.Time {
 	location := s.peruLocation()
 	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, location)

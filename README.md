@@ -15,7 +15,7 @@ La configuración se carga desde `.env`. El servidor utiliza siempre la hora rea
 
 ## Autenticación
 
-- `WORKER` inicia sesión únicamente con DNI y recibe un access token temporal sin refresh token.
+- `WORKER` inicia sesión con DNI y contraseña (inicialmente, el mismo DNI), y recibe un access token temporal sin refresh token.
 - `ADMIN`, `OWNER`, `RRHH` y `COLLABORATOR` usan usuario y contraseña.
 - Los refresh tokens administrativos se guardan como hash, se rotan de forma atómica y tienen uso único.
 

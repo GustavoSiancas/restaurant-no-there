@@ -35,13 +35,14 @@ func (h *Handler) LoginPassword(c *gin.Context) {
 }
 func (h *Handler) LoginDNI(c *gin.Context) {
 	var r struct {
-		DNI string `json:"dni"`
+		DNI      string `json:"dni"`
+		Password string `json:"password"`
 	}
 	if c.ShouldBindJSON(&r) != nil {
 		c.JSON(400, gin.H{"error": "invalid JSON"})
 		return
 	}
-	p, e := h.service.LoginDNI(c, r.DNI, c.Request.UserAgent(), clientIP(c))
+	p, e := h.service.LoginDNI(c, r.DNI, r.Password, c.Request.UserAgent(), clientIP(c))
 	if e != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": e.Error()})
 		return

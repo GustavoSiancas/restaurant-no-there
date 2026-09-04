@@ -100,6 +100,15 @@ func (h *Handler) Collaborators(c *gin.Context) {
 	c.JSON(http.StatusOK, users)
 }
 
+func (h *Handler) Users(c *gin.Context) {
+	users, err := h.service.ListUsers(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list users"})
+		return
+	}
+	c.JSON(http.StatusOK, users)
+}
+
 type changePasswordRequest struct {
 	OldPassword string `json:"old_password"`
 	NewPassword string `json:"new_password"`

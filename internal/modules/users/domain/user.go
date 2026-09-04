@@ -65,3 +65,12 @@ type MyUser struct {
 	Credentials []PublicCredential `json:"credentials"`
 	Worker      *WorkerDetails     `json:"worker_information,omitempty"`
 }
+
+type UserListItem struct {
+	UserID    string  `json:"user_id"`
+	Role      Role    `json:"role"`
+	Active    bool    `json:"active"`
+	FirstName string  `json:"first_name"`
+	LastName  string  `json:"last_name"`
+	Email     *string `json:"email,omitempty"`
+}

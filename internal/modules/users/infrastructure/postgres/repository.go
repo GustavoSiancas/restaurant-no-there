@@ -114,6 +114,24 @@ func (r *Repository) ListByRoles(ctx context.Context, roles ...domain.Role) ([]d
 	}
 	return result, nil
 }
+func (r *Repository) ListUsers(ctx context.Context) ([]domain.UserListItem, error) {
+	rows, err := r.db.Query(ctx, `SELECT u.id,u.role,u.active,p.first_name,p.last_name,p.email
+		FROM users u JOIN user_profiles p ON p.user_id=u.id
+		ORDER BY p.first_name,p.last_name,u.created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := make([]domain.UserListItem, 0)
+	for rows.Next() {
+		var user domain.UserListItem
+		if err = rows.Scan(&user.UserID, &user.Role, &user.Active, &user.FirstName, &user.LastName, &user.Email); err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
 func (r *Repository) FindPasswordCredential(ctx context.Context, value string) (*domain.User, string, error) {
 	var u domain.User
 	var hash string
@@ -131,8 +149,29 @@ func (r *Repository) FindPasswordHashByUserID(ctx context.Context, userID string
 	}
 	return hash, err
 }
+func (r *Repository) FindWorkerPasswordCredential(ctx context.Context, dni string) (*domain.User, string, error) {
+	var user domain.User
+	var hash string
+	err := r.db.QueryRow(ctx, `SELECT `+userColumns+`,password.secret_hash
+		FROM users u
+		JOIN user_credentials document ON document.user_id=u.id AND document.type='DNI' AND document.active=TRUE
+		JOIN user_credentials password ON password.user_id=u.id AND password.type='PASSWORD' AND password.active=TRUE
+		WHERE document.identifier=$1`, dni).Scan(&user.ID, &user.Role, &user.Active, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt, &hash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, "", core.ErrNotFound
+	}
+	return &user, hash, err
+}
 func (r *Repository) UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error {
-	result, err := r.db.Exec(ctx, `UPDATE user_credentials SET secret_hash=$2,updated_at=NOW() WHERE user_id=$1 AND type='PASSWORD' AND active=TRUE`, userID, passwordHash)
+	result, err := r.db.Exec(ctx, `UPDATE user_credentials SET secret_hash=$2,active=TRUE,updated_at=NOW() WHERE user_id=$1 AND type='PASSWORD'`, userID, passwordHash)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() > 0 {
+		return nil
+	}
+	result, err = r.db.Exec(ctx, `INSERT INTO user_credentials(user_id,type,identifier,secret_hash)
+		SELECT id,'PASSWORD',id::text,$2 FROM users WHERE id=$1`, userID, passwordHash)
 	if err != nil {
 		return err
 	}

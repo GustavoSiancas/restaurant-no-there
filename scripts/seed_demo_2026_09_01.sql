@@ -2,7 +2,7 @@
 -- Periodo: 2026-08-25 a 2026-09-08, tomando 2026-09-01 como fecha base.
 -- No crea usuarios ADMIN.
 -- OWNER/COLLABORATOR usan la contraseña: 12345678
--- WORKER inicia sesión mediante DNI: 91000001 a 91000050.
+-- WORKER inicia sesión con DNI 91000001 a 91000050; la contraseña inicial es el mismo DNI.
 
 BEGIN;
 
@@ -136,6 +136,18 @@ BEGIN
         ELSE
             UPDATE users SET role = 'WORKER', active = TRUE, updated_at = NOW() WHERE id = v_worker_id;
         END IF;
+
+        INSERT INTO user_credentials (user_id, type, identifier, secret_hash)
+        VALUES (
+            v_worker_id,
+            'PASSWORD',
+            v_worker_id::text,
+            crypt(format('91%s', lpad(worker_number::text, 6, '0')), gen_salt('bf'))
+        )
+        ON CONFLICT (type, identifier) DO UPDATE SET
+            secret_hash = EXCLUDED.secret_hash,
+            active = TRUE,
+            updated_at = NOW();
 
         -- Una semana anterior: CLOSED. Desde el 01/09 y una semana posterior: OPEN.
         FOR work_day IN
