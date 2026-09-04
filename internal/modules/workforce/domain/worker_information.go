@@ -7,6 +7,7 @@ type WorkerInformation struct {
 	FirstName             string     `json:"first_name"`
 	LastName              string     `json:"last_name"`
 	Email                 *string    `json:"email,omitempty"`
+	PhotoURL              *string    `json:"photo_url,omitempty"`
 	EmployeeCode          string     `json:"employee_code"`
 	JobTitle              *string    `json:"job_title,omitempty"`
 	Department            *string    `json:"department,omitempty"`

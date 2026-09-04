@@ -17,6 +17,26 @@ tags:
   - name: Testing
 paths:
   /test/server-time:
+    put:
+      tags: [Testing]
+      summary: Establecer la fecha y hora de prueba
+      description: Endpoint público y temporal para pruebas. No requiere autenticación. Ajusta el reloj usado por las reglas de turnos y comidas; el tiempo continúa avanzando desde el valor indicado.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [datetime]
+              properties:
+                datetime: {type: string, format: date-time, example: '2026-09-04T12:30:00-05:00'}
+      responses:
+        '200':
+          description: Reloj ajustado
+          content:
+            application/json:
+              example: {datetime: '2026-09-04T12:30:00-05:00', date: '2026-09-04', time: '12:30:00', timezone: America/Lima, adjusted: true}
+        '400': {$ref: '#/components/responses/BadRequest'}
     get:
       tags: [Testing]
       summary: Consultar la fecha y hora efectiva del servidor
@@ -72,7 +92,7 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/WorkerRegisterRequest'}
-            example: {dni: '10203040', email: worker@example.com, first_name: Juan, last_name: Pérez, employee_code: EMP-001, job_title: Operario, department: Producción, hire_date: '2026-09-01'}
+            example: {dni: '10203040', email: worker@example.com, photo_url: 'https://cdn.example.com/workers/juan.jpg', first_name: Juan, last_name: Pérez, employee_code: EMP-001, job_title: Operario, department: Producción, hire_date: '2026-09-01'}
       responses:
         '201': {description: Usuario y ficha laboral creados, content: {application/json: {schema: {$ref: '#/components/schemas/WorkerRegistrationResponse'}}}}
         '400': {$ref: '#/components/responses/BadRequest'}
@@ -140,6 +160,42 @@ paths:
         '200': {description: Usuario autenticado, content: {application/json: {schema: {$ref: '#/components/schemas/MyUser'}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {description: Usuario no encontrado}
+  /users/my/password:
+    patch:
+      tags: [Users]
+      summary: Cambiar mi contraseña
+      description: Obtiene el usuario desde el Bearer token y verifica la contraseña actual antes de guardar la nueva. No está disponible para WORKER porque inicia sesión mediante DNI.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangePasswordRequest'}
+            example: {old_password: password123, new_password: nuevaPassword456}
+      responses:
+        '204': {description: Contraseña actualizada}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {description: Token inválido o contraseña anterior incorrecta, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /users/{id}/password/reset:
+    put:
+      tags: [Users]
+      summary: Restablecer la contraseña de un usuario
+      description: Solo ADMIN. Restablece la contraseña de un usuario de gestión o colaborador sin solicitar su contraseña anterior. WORKER no posee contraseña.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResetPasswordRequest'}
+            example: {new_password: nuevaPassword456}
+      responses:
+        '204': {description: Contraseña restablecida}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: Usuario o credencial de contraseña no encontrados}
   /users/workers:
     get:
       tags: [Users]
@@ -403,6 +459,17 @@ components:
     Unauthorized: {description: Credenciales inválidas, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     Forbidden: {description: El rol autenticado no tiene permiso, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
   schemas:
+    ChangePasswordRequest:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password: {type: string, format: password}
+        new_password: {type: string, format: password, minLength: 8}
+    ResetPasswordRequest:
+      type: object
+      required: [new_password]
+      properties:
+        new_password: {type: string, format: password, minLength: 8}
     AdminBootstrapRequest:
       type: object
       required: [username, password, first_name, last_name]
@@ -437,6 +504,7 @@ components:
       properties:
         dni: {type: string}
         email: {type: string, format: email}
+        photo_url: {type: string, format: uri, description: URL opcional de la foto del trabajador}
         first_name: {type: string}
         last_name: {type: string}
         employee_code: {type: string, example: EMP-001}
@@ -457,6 +525,7 @@ components:
           properties:
             user_id: {type: string, format: uuid}
             employee_code: {type: string}
+            photo_url: {type: string, format: uri}
             job_title: {type: string}
             department: {type: string}
     AssignmentRequest:
@@ -615,6 +684,7 @@ components:
                 id: {type: string, format: uuid}
                 fullName: {type: string}
                 documentNumber: {type: string, example: '****5678'}
+                photoUrl: {type: string, format: uri, description: URL opcional de la foto del trabajador}
             service:
               type: object
               properties:
@@ -645,6 +715,7 @@ components:
         document_number: {type: string, example: '****5678'}
         employee_code: {type: string}
         department: {type: string, nullable: true}
+        photo_url: {type: string, format: uri, nullable: true}
     DailyMealStatusReport:
       type: object
       properties:
@@ -709,6 +780,7 @@ components:
               type: object
               properties:
                 employee_code: {type: string}
+                photo_url: {type: string, format: uri}
                 job_title: {type: string}
                 department: {type: string}
     Error:

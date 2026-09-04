@@ -89,6 +89,30 @@ func main() {
 	v1.POST("/auth/login/password", authLimit, authHandler.LoginPassword)
 	v1.POST("/auth/login/dni", authLimit, authHandler.LoginDNI)
 	v1.POST("/auth/refresh", authLimit, authHandler.Refresh)
+	v1.PUT("/test/server-time", func(c *gin.Context) {
+		var request struct {
+			Datetime string `json:"datetime"`
+		}
+		if c.ShouldBindJSON(&request) != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+			return
+		}
+		value, parseErr := time.Parse(time.RFC3339, request.Datetime)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "datetime is required and must use RFC3339, for example 2026-09-04T12:30:00-05:00"})
+			return
+		}
+		serverClock.Set(value)
+		now := serverClock.Now().In(peruLocation())
+		log.Printf("[TEST_CLOCK] server time adjusted datetime=%s timezone=America/Lima", now.Format(time.RFC3339))
+		c.JSON(http.StatusOK, gin.H{
+			"datetime": now.Format(time.RFC3339),
+			"date":     now.Format("2006-01-02"),
+			"time":     now.Format("15:04:05"),
+			"timezone": "America/Lima",
+			"adjusted": serverClock.Adjusted(),
+		})
+	})
 	v1.GET("/test/server-time", authhttp.RequireAuth(jwtService), authhttp.RequireRoles("RRHH", "OWNER", "COLLABORATOR", "WORKER"), func(c *gin.Context) {
 		now := serverClock.Now().In(peruLocation())
 		c.JSON(http.StatusOK, gin.H{
@@ -128,6 +152,8 @@ func main() {
 	protected.GET("/meal-schedules", authhttp.RequireRoles("WORKER"), mealHandler.ListSchedules)
 	protected.GET("/workers/my/status", authhttp.RequireRoles("WORKER"), mealHandler.WorkerStatus)
 	protected.GET("/users/my", usersHandler.My)
+	protected.PATCH("/users/my/password", usersHandler.ChangePassword)
+	protected.PUT("/users/:id/password/reset", authhttp.RequireRoles("ADMIN"), usersHandler.ResetPassword)
 	protected.GET("/users/workers", authhttp.RequireRoles("RRHH"), usersHandler.Workers)
 	protected.GET("/users/collaborators", authhttp.RequireRoles("OWNER"), usersHandler.Collaborators)
 	v1.GET("/ws/meal-orders", authhttp.RequireWebSocketAuth(jwtService), authhttp.RequireRoles("COLLABORATOR"), mealHandler.OrdersWebSocket)

@@ -21,6 +21,7 @@ func New(service *application.Service) *Handler { return &Handler{service: servi
 type registerWorkerRequest struct {
 	DNI                   string `json:"dni"`
 	Email                 string `json:"email"`
+	PhotoURL              string `json:"photo_url"`
 	FirstName             string `json:"first_name"`
 	LastName              string `json:"last_name"`
 	EmployeeCode          string `json:"employee_code"`
@@ -93,7 +94,7 @@ func (h *Handler) RegisterWorker(c *gin.Context) {
 		}
 		hireDate = &parsed
 	}
-	user, info, err := h.service.RegisterWorker(c, application.RegisterWorkerInput{DNI: r.DNI, Email: r.Email, FirstName: r.FirstName, LastName: r.LastName, EmployeeCode: r.EmployeeCode, JobTitle: r.JobTitle, Department: r.Department, Phone: r.Phone, Address: r.Address, HireDate: hireDate, EmergencyContactName: r.EmergencyContactName, EmergencyContactPhone: r.EmergencyContactPhone, Notes: r.Notes})
+	user, info, err := h.service.RegisterWorker(c, application.RegisterWorkerInput{DNI: r.DNI, Email: r.Email, PhotoURL: r.PhotoURL, FirstName: r.FirstName, LastName: r.LastName, EmployeeCode: r.EmployeeCode, JobTitle: r.JobTitle, Department: r.Department, Phone: r.Phone, Address: r.Address, HireDate: hireDate, EmergencyContactName: r.EmergencyContactName, EmergencyContactPhone: r.EmergencyContactPhone, Notes: r.Notes})
 	if err != nil {
 		status := 400
 		if errors.Is(err, core.ErrConflict) {

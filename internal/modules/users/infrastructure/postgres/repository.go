@@ -72,7 +72,7 @@ func (r *Repository) FindMyUser(ctx context.Context, id string) (*domain.MyUser,
 	}
 	if result.Role == domain.RoleWorker {
 		var worker domain.WorkerDetails
-		err = r.db.QueryRow(ctx, `SELECT employee_code,job_title,department,phone,address,hire_date,emergency_contact_name,emergency_contact_phone,notes FROM worker_information WHERE user_id=$1`, id).Scan(&worker.EmployeeCode, &worker.JobTitle, &worker.Department, &worker.Phone, &worker.Address, &worker.HireDate, &worker.EmergencyContactName, &worker.EmergencyContactPhone, &worker.Notes)
+		err = r.db.QueryRow(ctx, `SELECT employee_code,photo_url,job_title,department,phone,address,hire_date,emergency_contact_name,emergency_contact_phone,notes FROM worker_information WHERE user_id=$1`, id).Scan(&worker.EmployeeCode, &worker.PhotoURL, &worker.JobTitle, &worker.Department, &worker.Phone, &worker.Address, &worker.HireDate, &worker.EmergencyContactName, &worker.EmergencyContactPhone, &worker.Notes)
 		if err == nil {
 			result.Worker = &worker
 		} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -122,6 +122,24 @@ func (r *Repository) FindPasswordCredential(ctx context.Context, value string) (
 		return nil, "", core.ErrNotFound
 	}
 	return &u, hash, err
+}
+func (r *Repository) FindPasswordHashByUserID(ctx context.Context, userID string) (string, error) {
+	var hash string
+	err := r.db.QueryRow(ctx, `SELECT secret_hash FROM user_credentials WHERE user_id=$1 AND type='PASSWORD' AND active=TRUE`, userID).Scan(&hash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", core.ErrNotFound
+	}
+	return hash, err
+}
+func (r *Repository) UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error {
+	result, err := r.db.Exec(ctx, `UPDATE user_credentials SET secret_hash=$2,updated_at=NOW() WHERE user_id=$1 AND type='PASSWORD' AND active=TRUE`, userID, passwordHash)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return core.ErrNotFound
+	}
+	return nil
 }
 func (r *Repository) FindByDNI(ctx context.Context, value string) (*domain.User, error) {
 	return scanUser(r.db.QueryRow(ctx, `SELECT `+userColumns+` FROM users u JOIN user_credentials c ON c.user_id=u.id AND c.type='DNI' AND c.active=TRUE WHERE c.identifier=$1`, value))

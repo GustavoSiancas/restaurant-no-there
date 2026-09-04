@@ -29,6 +29,7 @@ func NewService(repo Repository, users users.UserRepository, clocks ...func() ti
 
 type RegisterWorkerInput struct {
 	DNI, Email, FirstName, LastName, EmployeeCode      string
+	PhotoURL                                           string
 	JobTitle, Department, Phone, Address               string
 	HireDate                                           *time.Time
 	EmergencyContactName, EmergencyContactPhone, Notes string
@@ -53,7 +54,7 @@ func (s *Service) RegisterWorker(ctx context.Context, in RegisterWorkerInput) (*
 		return nil, nil, fmt.Errorf("dni, first_name, last_name and employee_code are required")
 	}
 	user := &userdomain.User{Role: userdomain.RoleWorker}
-	info := &domain.WorkerInformation{FirstName: strings.TrimSpace(in.FirstName), LastName: strings.TrimSpace(in.LastName), Email: nullable(in.Email), EmployeeCode: strings.TrimSpace(in.EmployeeCode), JobTitle: nullable(in.JobTitle), Department: nullable(in.Department), Phone: nullable(in.Phone), Address: nullable(in.Address), HireDate: in.HireDate, EmergencyContactName: nullable(in.EmergencyContactName), EmergencyContactPhone: nullable(in.EmergencyContactPhone), Notes: nullable(in.Notes)}
+	info := &domain.WorkerInformation{FirstName: strings.TrimSpace(in.FirstName), LastName: strings.TrimSpace(in.LastName), Email: nullable(in.Email), PhotoURL: nullable(in.PhotoURL), EmployeeCode: strings.TrimSpace(in.EmployeeCode), JobTitle: nullable(in.JobTitle), Department: nullable(in.Department), Phone: nullable(in.Phone), Address: nullable(in.Address), HireDate: in.HireDate, EmergencyContactName: nullable(in.EmergencyContactName), EmergencyContactPhone: nullable(in.EmergencyContactPhone), Notes: nullable(in.Notes)}
 	if err := s.repo.CreateWorker(ctx, user, info, *dni); err != nil {
 		return nil, nil, err
 	}

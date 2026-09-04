@@ -26,6 +26,10 @@ func (f fakeUsers) ListByRoles(context.Context, ...userdomain.Role) ([]userdomai
 func (f fakeUsers) FindPasswordCredential(context.Context, string) (*userdomain.User, string, error) {
 	return nil, "", core.ErrNotFound
 }
+func (f fakeUsers) FindPasswordHashByUserID(context.Context, string) (string, error) {
+	return "", core.ErrNotFound
+}
+func (f fakeUsers) UpdatePasswordHash(context.Context, string, string) error { return nil }
 func (f fakeUsers) FindByDNI(context.Context, string) (*userdomain.User, error) {
 	return nil, core.ErrNotFound
 }
@@ -34,6 +38,7 @@ func (f fakeUsers) RoleExists(context.Context, userdomain.Role) (bool, error) { 
 
 type fakeRepository struct {
 	existing     *domain.WorkerShiftAssignment
+	workerInfo   *domain.WorkerInformation
 	created      bool
 	bulkCreated  int
 	bulkReplaced int
@@ -41,7 +46,8 @@ type fakeRepository struct {
 	rules        []domain.PreviewRule
 }
 
-func (f *fakeRepository) CreateWorker(context.Context, *userdomain.User, *domain.WorkerInformation, string) error {
+func (f *fakeRepository) CreateWorker(_ context.Context, _ *userdomain.User, info *domain.WorkerInformation, _ string) error {
+	f.workerInfo = info
 	return nil
 }
 
@@ -85,6 +91,35 @@ func (f *fakeRepository) ListShiftPreview(context.Context, time.Time) ([]domain.
 func (f *fakeRepository) ListActiveMealRules(context.Context) ([]domain.PreviewRule, error) {
 	return f.rules, nil
 }
+
+func TestRegisterWorkerAcceptsOptionalPhotoURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  *string
+	}{
+		{name: "omitted", input: "", want: nil},
+		{name: "provided", input: "  https://cdn.example.com/worker.jpg  ", want: stringPointer("https://cdn.example.com/worker.jpg")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &fakeRepository{}
+			service := NewService(repo, fakeUsers{})
+			_, info, err := service.RegisterWorker(context.Background(), RegisterWorkerInput{DNI: "12345678", FirstName: "Ana", LastName: "Pérez", EmployeeCode: "EMP-1", PhotoURL: test.input})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if (info.PhotoURL == nil) != (test.want == nil) || info.PhotoURL != nil && *info.PhotoURL != *test.want {
+				t.Fatalf("unexpected photo URL: %#v", info.PhotoURL)
+			}
+			if repo.workerInfo != info {
+				t.Fatal("worker info was not sent to repository")
+			}
+		})
+	}
+}
+
+func stringPointer(value string) *string { return &value }
 
 func TestShiftPreviewAssignsMealsByShift(t *testing.T) {
 	date := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)

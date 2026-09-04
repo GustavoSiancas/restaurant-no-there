@@ -13,7 +13,8 @@ import (
 func TestBrokerSendsClaimedOrdersSnapshotOnConnect(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	broker := NewBroker([]string{"*"})
-	orders := []domain.MealOrder{{Claim: domain.Claim{ID: "claim-1", Status: domain.ClaimClaimed}}}
+	photoURL := "https://cdn.example.com/workers/worker-1.jpg"
+	orders := []domain.MealOrder{{Claim: domain.Claim{ID: "claim-1", Status: domain.ClaimClaimed}, Worker: domain.ClaimPreviewWorker{PhotoURL: &photoURL}}}
 	router := gin.New()
 	router.GET("/ws", func(c *gin.Context) { broker.Serve(c, orders) })
 	server := httptest.NewServer(router)
@@ -35,5 +36,8 @@ func TestBrokerSendsClaimedOrdersSnapshotOnConnect(t *testing.T) {
 	}
 	if event.Type != "CLAIMED_ORDERS" || len(event.Data) != 1 || event.Data[0].ID != "claim-1" || event.Data[0].Status != domain.ClaimClaimed {
 		t.Fatalf("unexpected initial event: %+v", event)
+	}
+	if event.Data[0].Worker.PhotoURL == nil || *event.Data[0].Worker.PhotoURL != photoURL {
+		t.Fatalf("worker photo was not included in WebSocket event: %+v", event.Data[0].Worker)
 	}
 }

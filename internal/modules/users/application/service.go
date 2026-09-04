@@ -1,6 +1,7 @@
 package application
 
 import (
+	core "backend/internal/core/domain"
 	"backend/internal/modules/users/domain"
 	"context"
 	"fmt"
@@ -62,4 +63,50 @@ func (s *Service) FindMyUser(ctx context.Context, id string) (*domain.MyUser, er
 
 func (s *Service) ListByRoles(ctx context.Context, roles ...domain.Role) ([]domain.MyUser, error) {
 	return s.repo.ListByRoles(ctx, roles...)
+}
+
+func validateNewPassword(password string) error {
+	if len(password) < 8 {
+		return fmt.Errorf("new_password must contain at least 8 characters: %w", core.ErrInvalidInput)
+	}
+	return nil
+}
+
+func (s *Service) ChangePassword(ctx context.Context, userID, oldPassword, newPassword string) error {
+	if strings.TrimSpace(userID) == "" || oldPassword == "" {
+		return core.ErrUnauthorized
+	}
+	if err := validateNewPassword(newPassword); err != nil {
+		return err
+	}
+	currentHash, err := s.repo.FindPasswordHashByUserID(ctx, userID)
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(currentHash), []byte(oldPassword)) != nil {
+		return core.ErrUnauthorized
+	}
+	newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.repo.UpdatePasswordHash(ctx, userID, string(newHash))
+}
+
+func (s *Service) ResetPassword(ctx context.Context, userID, newPassword string) error {
+	if strings.TrimSpace(userID) == "" {
+		return core.ErrNotFound
+	}
+	if err := validateNewPassword(newPassword); err != nil {
+		return err
+	}
+	user, err := s.repo.FindByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user.Role == domain.RoleWorker {
+		return fmt.Errorf("WORKER users authenticate with DNI and do not have a password: %w", core.ErrInvalidInput)
+	}
+	newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.repo.UpdatePasswordHash(ctx, userID, string(newHash))
 }

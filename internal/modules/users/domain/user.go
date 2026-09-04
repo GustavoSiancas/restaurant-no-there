@@ -48,6 +48,7 @@ type PublicCredential struct {
 
 type WorkerDetails struct {
 	EmployeeCode          string     `json:"employee_code"`
+	PhotoURL              *string    `json:"photo_url,omitempty"`
 	JobTitle              *string    `json:"job_title,omitempty"`
 	Department            *string    `json:"department,omitempty"`
 	Phone                 *string    `json:"phone,omitempty"`

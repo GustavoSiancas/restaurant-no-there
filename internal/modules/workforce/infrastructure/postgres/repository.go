@@ -34,8 +34,8 @@ func (r *Repository) CreateWorker(ctx context.Context, u *userdomain.User, i *do
 	if _, err = tx.Exec(ctx, `INSERT INTO user_credentials(user_id,type,identifier) VALUES($1,'DNI',$2)`, u.ID, dni); err != nil {
 		return translate(err)
 	}
-	err = tx.QueryRow(ctx, `INSERT INTO worker_information (user_id,employee_code,job_title,department,phone,address,hire_date,emergency_contact_name,emergency_contact_phone,notes)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING created_at,updated_at`, i.UserID, i.EmployeeCode, i.JobTitle, i.Department, i.Phone, i.Address, i.HireDate, i.EmergencyContactName, i.EmergencyContactPhone, i.Notes).Scan(&i.CreatedAt, &i.UpdatedAt)
+	err = tx.QueryRow(ctx, `INSERT INTO worker_information (user_id,employee_code,photo_url,job_title,department,phone,address,hire_date,emergency_contact_name,emergency_contact_phone,notes)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING created_at,updated_at`, i.UserID, i.EmployeeCode, i.PhotoURL, i.JobTitle, i.Department, i.Phone, i.Address, i.HireDate, i.EmergencyContactName, i.EmergencyContactPhone, i.Notes).Scan(&i.CreatedAt, &i.UpdatedAt)
 	if err != nil {
 		return translate(err)
 	}
@@ -55,7 +55,7 @@ func translate(err error) error {
 
 func (r *Repository) FindWorkerInformation(ctx context.Context, id string) (*domain.WorkerInformation, error) {
 	var i domain.WorkerInformation
-	err := r.db.QueryRow(ctx, `SELECT wi.user_id,p.first_name,p.last_name,p.email,wi.employee_code,wi.job_title,wi.department,wi.phone,wi.address,wi.hire_date,wi.emergency_contact_name,wi.emergency_contact_phone,wi.notes,wi.created_at,wi.updated_at FROM worker_information wi JOIN user_profiles p ON p.user_id=wi.user_id WHERE wi.user_id=$1`, id).Scan(&i.UserID, &i.FirstName, &i.LastName, &i.Email, &i.EmployeeCode, &i.JobTitle, &i.Department, &i.Phone, &i.Address, &i.HireDate, &i.EmergencyContactName, &i.EmergencyContactPhone, &i.Notes, &i.CreatedAt, &i.UpdatedAt)
+	err := r.db.QueryRow(ctx, `SELECT wi.user_id,p.first_name,p.last_name,p.email,wi.photo_url,wi.employee_code,wi.job_title,wi.department,wi.phone,wi.address,wi.hire_date,wi.emergency_contact_name,wi.emergency_contact_phone,wi.notes,wi.created_at,wi.updated_at FROM worker_information wi JOIN user_profiles p ON p.user_id=wi.user_id WHERE wi.user_id=$1`, id).Scan(&i.UserID, &i.FirstName, &i.LastName, &i.Email, &i.PhotoURL, &i.EmployeeCode, &i.JobTitle, &i.Department, &i.Phone, &i.Address, &i.HireDate, &i.EmergencyContactName, &i.EmergencyContactPhone, &i.Notes, &i.CreatedAt, &i.UpdatedAt)
 	return &i, translate(err)
 }
 func (r *Repository) CreateAssignment(ctx context.Context, a *domain.WorkerShiftAssignment) error {

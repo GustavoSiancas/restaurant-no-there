@@ -71,6 +71,7 @@ type DetailedReportRow struct {
 	DocumentNumber string      `json:"document_number"`
 	EmployeeCode   string      `json:"employee_code"`
 	Department     *string     `json:"department,omitempty"`
+	PhotoURL       *string     `json:"photo_url,omitempty"`
 }
 
 type MealStatusSummary struct {
@@ -146,9 +147,10 @@ type WorkerTicketIdentity struct {
 }
 
 type ClaimPreviewWorker struct {
-	ID             string `json:"id"`
-	FullName       string `json:"fullName"`
-	DocumentNumber string `json:"documentNumber"`
+	ID             string  `json:"id"`
+	FullName       string  `json:"fullName"`
+	DocumentNumber string  `json:"documentNumber"`
+	PhotoURL       *string `json:"photoUrl,omitempty"`
 }
 
 type ClaimPreviewService struct {

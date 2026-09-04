@@ -1,8 +1,10 @@
 package http
 
 import (
+	core "backend/internal/core/domain"
 	"backend/internal/modules/users/application"
 	"backend/internal/modules/users/domain"
+	"errors"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )
@@ -96,4 +98,58 @@ func (h *Handler) Collaborators(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, users)
+}
+
+type changePasswordRequest struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
+func (h *Handler) ChangePassword(c *gin.Context) {
+	var request changePasswordRequest
+	if c.ShouldBindJSON(&request) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+	userID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated user not found"})
+		return
+	}
+	if err := h.service.ChangePassword(c, userID.(string), request.OldPassword, request.NewPassword); err != nil {
+		status := http.StatusInternalServerError
+		message := "could not change password"
+		if errors.Is(err, core.ErrUnauthorized) {
+			status, message = http.StatusUnauthorized, "old password is incorrect"
+		} else if errors.Is(err, core.ErrInvalidInput) {
+			status, message = http.StatusBadRequest, err.Error()
+		}
+		c.JSON(status, gin.H{"error": message})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+type resetPasswordRequest struct {
+	NewPassword string `json:"new_password"`
+}
+
+func (h *Handler) ResetPassword(c *gin.Context) {
+	var request resetPasswordRequest
+	if c.ShouldBindJSON(&request) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+	if err := h.service.ResetPassword(c, c.Param("id"), request.NewPassword); err != nil {
+		status := http.StatusInternalServerError
+		message := "could not reset password"
+		if errors.Is(err, core.ErrNotFound) {
+			status, message = http.StatusNotFound, "user or password credential not found"
+		} else if errors.Is(err, core.ErrInvalidInput) {
+			status, message = http.StatusBadRequest, err.Error()
+		}
+		c.JSON(status, gin.H{"error": message})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

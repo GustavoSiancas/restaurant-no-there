@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	core "backend/internal/core/domain"
@@ -102,8 +103,9 @@ func (r *Repository) CloseShiftsAndCreateClaims(ctx context.Context, throughDate
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err = tx.Exec(ctx, `UPDATE worker_shift_assignments SET status='CLOSED',updated_at=$2
-		WHERE status='OPEN' AND work_date <= $1::date`, throughDate, closedAt); err != nil {
+	closedShifts, err := tx.Exec(ctx, `UPDATE worker_shift_assignments SET status='CLOSED',updated_at=$2
+		WHERE status='OPEN' AND work_date <= $1::date`, throughDate, closedAt)
+	if err != nil {
 		return 0, err
 	}
 	result, err := tx.Exec(ctx, `INSERT INTO meal_claims
@@ -125,15 +127,18 @@ func (r *Repository) CloseShiftsAndCreateClaims(ctx context.Context, throughDate
 	if err = tx.Commit(ctx); err != nil {
 		return 0, err
 	}
+	if count := closedShifts.RowsAffected(); count > 0 {
+		log.Printf("[MEAL_SCHEDULER] shifts closed count=%d through_date=%s closed_at=%s", count, throughDate.Format("2006-01-02"), closedAt.Format(time.RFC3339))
+	}
 	return result.RowsAffected(), nil
 }
 
 const orderColumns = `c.id,c.worker_id,c.shift_assignment_id,c.meal_type,c.service_date,c.claimed_at,c.status,c.validated_at,c.validated_by,c.notes,c.created_at,c.updated_at,
-	u.id,BTRIM(p.first_name || ' ' || p.last_name),REPEAT('*',GREATEST(LENGTH(dni.identifier)-4,0)) || RIGHT(dni.identifier,4)`
+	u.id,BTRIM(p.first_name || ' ' || p.last_name),REPEAT('*',GREATEST(LENGTH(dni.identifier)-4,0)) || RIGHT(dni.identifier,4),wi.photo_url`
 
 func scanOrder(row pgx.Row) (*domain.MealOrder, error) {
 	var order domain.MealOrder
-	err := row.Scan(&order.ID, &order.WorkerID, &order.ShiftAssignmentID, &order.MealType, &order.ServiceDate, &order.ClaimedAt, &order.Status, &order.ValidatedAt, &order.ValidatedBy, &order.Notes, &order.CreatedAt, &order.UpdatedAt, &order.Worker.ID, &order.Worker.FullName, &order.Worker.DocumentNumber)
+	err := row.Scan(&order.ID, &order.WorkerID, &order.ShiftAssignmentID, &order.MealType, &order.ServiceDate, &order.ClaimedAt, &order.Status, &order.ValidatedAt, &order.ValidatedBy, &order.Notes, &order.CreatedAt, &order.UpdatedAt, &order.Worker.ID, &order.Worker.FullName, &order.Worker.DocumentNumber, &order.Worker.PhotoURL)
 	if err != nil {
 		return nil, translate(err)
 	}
@@ -154,7 +159,8 @@ func orderService(mealType domain.MealType) domain.ClaimPreviewService {
 
 const orderJoins = ` JOIN users u ON u.id=c.worker_id
 	JOIN user_profiles p ON p.user_id=u.id
-	JOIN user_credentials dni ON dni.user_id=u.id AND dni.type='DNI' AND dni.active=TRUE `
+	JOIN user_credentials dni ON dni.user_id=u.id AND dni.type='DNI' AND dni.active=TRUE
+	JOIN worker_information wi ON wi.user_id=u.id `
 
 func (r *Repository) ListOrders(ctx context.Context, status domain.ClaimStatus) ([]domain.MealOrder, error) {
 	rows, err := r.db.Query(ctx, `SELECT `+orderColumns+` FROM meal_claims c `+orderJoins+` WHERE c.status=$1 ORDER BY c.created_at`, status)
@@ -241,7 +247,7 @@ func (r *Repository) DetailedReportRows(ctx context.Context, filters domain.Repo
 	query := `SELECT c.id,c.service_date,c.meal_type,a.shift_type,c.status,c.claimed_at,c.validated_at,c.worker_id,
 		BTRIM(p.first_name || ' ' || p.last_name),
 		REPEAT('*',GREATEST(LENGTH(dni.identifier)-4,0)) || RIGHT(dni.identifier,4),
-		wi.employee_code,wi.department` + detailedReportWhere + ` ORDER BY c.service_date DESC,c.meal_type,c.created_at`
+		wi.employee_code,wi.department,wi.photo_url` + detailedReportWhere + ` ORDER BY c.service_date DESC,c.meal_type,c.created_at`
 	args := []any{filters.From, filters.To, filters.MealType, filters.ShiftType}
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
@@ -255,7 +261,7 @@ func (r *Repository) DetailedReportRows(ctx context.Context, filters domain.Repo
 	result := make([]domain.DetailedReportRow, 0)
 	for rows.Next() {
 		var row domain.DetailedReportRow
-		if err = rows.Scan(&row.ID, &row.ServiceDate, &row.MealType, &row.ShiftType, &row.Status, &row.ClaimedAt, &row.ValidatedAt, &row.WorkerID, &row.FullName, &row.DocumentNumber, &row.EmployeeCode, &row.Department); err != nil {
+		if err = rows.Scan(&row.ID, &row.ServiceDate, &row.MealType, &row.ShiftType, &row.Status, &row.ClaimedAt, &row.ValidatedAt, &row.WorkerID, &row.FullName, &row.DocumentNumber, &row.EmployeeCode, &row.Department, &row.PhotoURL); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
@@ -313,7 +319,7 @@ func (r *Repository) DailyMealStatusRows(ctx context.Context, date time.Time, me
 	rows, err := r.db.Query(ctx, `SELECT c.id,c.service_date,c.meal_type,a.shift_type,c.status,c.claimed_at,c.validated_at,c.worker_id,
 		BTRIM(p.first_name || ' ' || p.last_name),
 		REPEAT('*',GREATEST(LENGTH(dni.identifier)-4,0)) || RIGHT(dni.identifier,4),
-		wi.employee_code,wi.department
+		wi.employee_code,wi.department,wi.photo_url
 	FROM meal_claims c
 	JOIN worker_shift_assignments a ON a.id=c.shift_assignment_id
 	JOIN user_profiles p ON p.user_id=c.worker_id
@@ -329,7 +335,7 @@ func (r *Repository) DailyMealStatusRows(ctx context.Context, date time.Time, me
 	result := make([]domain.DetailedReportRow, 0)
 	for rows.Next() {
 		var row domain.DetailedReportRow
-		if err = rows.Scan(&row.ID, &row.ServiceDate, &row.MealType, &row.ShiftType, &row.Status, &row.ClaimedAt, &row.ValidatedAt, &row.WorkerID, &row.FullName, &row.DocumentNumber, &row.EmployeeCode, &row.Department); err != nil {
+		if err = rows.Scan(&row.ID, &row.ServiceDate, &row.MealType, &row.ShiftType, &row.Status, &row.ClaimedAt, &row.ValidatedAt, &row.WorkerID, &row.FullName, &row.DocumentNumber, &row.EmployeeCode, &row.Department, &row.PhotoURL); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
