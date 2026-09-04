@@ -16,6 +16,251 @@ tags:
   - name: Meals
   - name: Testing
 paths:
+  /food-days:
+    post:
+      tags: [Foods]
+      summary: Schedule a food for a date and meal type
+      description: ADMIN, OWNER or COLLABORATOR. Requires at least 3 calendar days of advance notice in America/Lima. Creates OPEN; repeated assignments are allowed. The scheduler closes OPEN records whose service_date is today plus 3 days or earlier, at startup and every minute. A record created exactly 3 days ahead closes on the next scheduler run.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [service_date, meal_type, food_id]
+              properties:
+                service_date: {type: string, format: date}
+                meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
+                food_id: {type: string, format: uuid}
+      responses:
+        '201':
+          description: Created as OPEN
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FoodDay'}
+        '400': {description: Invalid input, insufficient advance notice or nonexistent food}
+        '401': {description: Authentication required}
+        '403': {description: Role not allowed}
+        '500': {description: Internal error}
+    get:
+      tags: [Foods]
+      summary: List food days grouped by date and meal type
+      description: All statuses included. Dates ascending, meal groups ordered BREAKFAST, LUNCH, DINNER. Calories use current food values and count every assignment, including repeated foods. Without date returns all dates with assignments; no results returns an empty array.
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: date
+          schema: {type: string, format: date}
+      responses:
+        '200':
+          description: Daily groups with daily and per-meal calorie totals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    service_date: {type: string, format: date}
+                    total_calories: {type: number, format: double}
+                    meals:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
+                          total_calories: {type: number, format: double}
+                          foods:
+                            type: array
+                            items:
+                              allOf:
+                                - {$ref: '#/components/schemas/FoodDay'}
+                                - type: object
+                                  properties:
+                                    food: {$ref: '#/components/schemas/Food'}
+        '400': {description: Invalid date}
+        '401': {description: Authentication required}
+        '500': {description: Internal error}
+  /food-days/{id}:
+    delete:
+      tags: [Foods]
+      summary: Delete an OPEN food day
+      description: ADMIN, OWNER or COLLABORATOR. CLOSED records cannot be deleted.
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '204': {description: Deleted}
+        '400': {description: Invalid UUID}
+        '401': {description: Authentication required}
+        '403': {description: Role not allowed}
+        '404': {description: Food day not found}
+        '409': {description: Only OPEN food days can be deleted}
+        '500': {description: Internal error}
+  /foods/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Foods]
+      summary: Get a food by ID including its assigned tags
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Food
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Food'}
+        '400': {description: Invalid food UUID}
+        '401': {description: Authentication required}
+        '404': {description: Food not found}
+        '500': {description: Internal error}
+    put:
+      tags: [Foods]
+      summary: Update a food and replace its assigned tags
+      description: ADMIN, OWNER or COLLABORATOR. Provided fields are updated; omitted or null fields are preserved. tag_ids replaces the complete tag list; send an empty array to remove all tags. Duplicate IDs are assigned once. All tag IDs must exist; any failure rolls back the entire update.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string, minLength: 1, maxLength: 200}
+                long_description: {type: string, minLength: 1}
+                total_calories: {type: number, format: double, minimum: 0}
+                photo_url: {type: string, minLength: 1}
+                tag_ids:
+                  type: array
+                  items: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Updated food including its assigned tags
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Food'}
+        '400': {description: Invalid input or nonexistent tag IDs}
+        '401': {description: Authentication required}
+        '403': {description: Role not allowed}
+        '404': {description: Food not found}
+        '500': {description: Internal error}
+  /foods:
+    post:
+      tags: [Foods]
+      summary: Create a food and assign existing tags
+      description: ADMIN, OWNER or COLLABORATOR. All tag IDs must exist; creation is atomic. Repeated tag IDs are assigned once.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, long_description, total_calories, photo_url]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 200}
+                long_description: {type: string, minLength: 1}
+                total_calories: {type: number, format: double, minimum: 0, example: 450.5}
+                photo_url: {type: string, minLength: 1}
+                tag_ids:
+                  type: array
+                  default: []
+                  items: {type: string, format: uuid}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Food'}
+        '400': {description: Invalid input or nonexistent tag IDs}
+        '401': {description: Authentication required}
+        '403': {description: Role not allowed}
+        '500': {description: Internal error}
+    get:
+      tags: [Foods]
+      summary: List foods with pagination and optional tag filters
+      description: Any authenticated user. Without tag_ids returns all foods paginated. With tag_ids matches ANY selected tag and returns all tags assigned to each food. Ordered by creation date descending.
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: page
+          schema: {type: integer, minimum: 1, default: 1}
+        - in: query
+          name: page_size
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - in: query
+          name: tag_ids
+          description: Comma-separated UUIDs. Repeated query parameters are also accepted.
+          style: form
+          explode: false
+          schema:
+            type: array
+            items: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Paginated foods
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: {$ref: '#/components/schemas/Food'}
+                  page: {type: integer}
+                  page_size: {type: integer}
+                  total: {type: integer, format: int64}
+                  total_pages: {type: integer, format: int64}
+        '400': {description: Invalid pagination or tag UUIDs}
+        '401': {description: Authentication required}
+        '500': {description: Internal error}
+  /tags:
+    post:
+      tags: [Foods]
+      summary: Create a reusable tag
+      description: ADMIN, OWNER or COLLABORATOR. Names are trimmed and unique ignoring case.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 100, example: Vegan}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FoodTag'}
+        '400': {description: Invalid name}
+        '401': {description: Authentication required}
+        '403': {description: Role not allowed}
+        '409': {description: Tag name already exists}
+        '500': {description: Internal error}
+    get:
+      tags: [Foods]
+      summary: List all tags sorted by name
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Tags, or an empty array
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/FoodTag'}
+        '401': {description: Authentication required}
+        '500': {description: Internal error}
   /test/server-time:
     put:
       tags: [Testing]
@@ -475,6 +720,36 @@ components:
     Unauthorized: {description: Credenciales inválidas, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     Forbidden: {description: El rol autenticado no tiene permiso, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
   schemas:
+    FoodDay:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        service_date: {type: string, format: date}
+        meal_type: {type: string, enum: [BREAKFAST, LUNCH, DINNER]}
+        food_id: {type: string, format: uuid}
+        status: {type: string, enum: [OPEN, CLOSED]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    FoodTag:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    Food:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        long_description: {type: string}
+        total_calories: {type: number, format: double, minimum: 0}
+        photo_url: {type: string}
+        tags:
+          type: array
+          items: {$ref: '#/components/schemas/FoodTag'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     UserListItem:
       type: object
       properties:

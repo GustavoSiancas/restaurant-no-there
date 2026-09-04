@@ -9,6 +9,9 @@ import (
 	authhttp "backend/internal/modules/auth/delivery/http"
 	jwtinfra "backend/internal/modules/auth/infrastructure/jwt"
 	tokenpg "backend/internal/modules/auth/infrastructure/postgres"
+	foodapp "backend/internal/modules/foods/application"
+	foodhttp "backend/internal/modules/foods/delivery/http"
+	foodpg "backend/internal/modules/foods/infrastructure/postgres"
 	mealapp "backend/internal/modules/meals/application"
 	mealhttp "backend/internal/modules/meals/delivery/http"
 	mealpg "backend/internal/modules/meals/infrastructure/postgres"
@@ -56,6 +59,10 @@ func main() {
 	clock := serverClock.Now
 	jwtService := jwtinfra.New(cfg.JWTSecret)
 	usersHandler := userhttp.New(userapp.NewService(usersRepo))
+	foodsHandler := foodhttp.New(foodapp.NewService(foodpg.New(db)))
+	foodDayService := foodapp.NewFoodDayService(foodpg.New(db), clock)
+	foodDayHandler := foodhttp.NewFoodDayHandler(foodDayService)
+	go runFoodDayScheduler(ctx, foodDayService)
 	authHandler := authhttp.New(authapp.NewService(usersRepo, tokensRepo, jwtService, cfg.AccessTTL, cfg.WorkerAccessTTL, cfg.RefreshTTL))
 	workforceHandler := workforcehttp.New(workforceapp.NewService(workforcepg.New(db), usersRepo, clock))
 	mealBroker := mealhttp.NewBroker(cfg.AllowedOrigins)
@@ -125,6 +132,15 @@ func main() {
 	})
 	protected := v1.Group("")
 	protected.Use(authhttp.RequireAuth(jwtService))
+	protected.POST("/foods", authhttp.RequireRoles("ADMIN", "OWNER", "COLLABORATOR"), foodsHandler.CreateFood)
+	protected.GET("/foods", foodsHandler.ListFoods)
+	protected.GET("/foods/:id", foodsHandler.GetFood)
+	protected.PUT("/foods/:id", authhttp.RequireRoles("ADMIN", "OWNER", "COLLABORATOR"), foodsHandler.UpdateFood)
+	protected.POST("/tags", authhttp.RequireRoles("ADMIN", "OWNER", "COLLABORATOR"), foodsHandler.CreateTag)
+	protected.GET("/tags", foodsHandler.ListTags)
+	protected.POST("/food-days", authhttp.RequireRoles("ADMIN", "OWNER", "COLLABORATOR"), foodDayHandler.Create)
+	protected.GET("/food-days", foodDayHandler.List)
+	protected.DELETE("/food-days/:id", authhttp.RequireRoles("ADMIN", "OWNER", "COLLABORATOR"), foodDayHandler.Delete)
 	protected.POST("/users/register/management", authhttp.RequireRoles("ADMIN"), usersHandler.RegisterManagement)
 	protected.POST("/users/register/collaborator", authhttp.RequireRoles("ADMIN", "OWNER"), usersHandler.RegisterCollaborator)
 	protected.POST("/users/register/worker", authhttp.RequireRoles("ADMIN", "RRHH"), workforceHandler.RegisterWorker)
@@ -181,6 +197,32 @@ func peruLocation() *time.Location {
 		return time.FixedZone("America/Lima", -5*60*60)
 	}
 	return location
+}
+
+func runFoodDayScheduler(ctx context.Context, service *foodapp.FoodDayService) {
+	run := func() {
+		closed, err := service.CloseDue(ctx)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Printf("food day scheduler error: %v", err)
+			}
+			return
+		}
+		if closed > 0 {
+			log.Printf("food day scheduler closed %d records", closed)
+		}
+	}
+	run()
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
 }
 
 func runMealScheduler(ctx context.Context, service *mealapp.Service, interval time.Duration, lookbackDays int) {
